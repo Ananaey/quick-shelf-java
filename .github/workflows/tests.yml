@@ -1,0 +1,25 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Compile
+        run: |
+          mkdir out
+          javac -Xlint:all -d out src/quickshelf/*.java test/quickshelf/*.java
+      - name: Run tests (no display here, so the window smoke test skips itself)
+        run: |
+          for t in SlideMathTest SlidePanelSmokeTest; do
+            java -cp out quickshelf.$t
+          done
