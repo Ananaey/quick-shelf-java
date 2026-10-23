@@ -25,7 +25,7 @@ The window smoke test briefly opens real windows. It skips itself on machines wi
 ## Roadmap
 
 - [x] Day 1: frameless always-on-top panel, edge handle, slide animation
-- [ ] Day 2: drag files and folders in from Explorer
+- [x] Day 2: drag files and folders in from Explorer (shown with their Windows icons)
 - [ ] Day 3: double-click to open, right-click to remove and reorder
 - [ ] Day 4: save the shelf between runs
 - [ ] Day 5: light and dark themes, search
