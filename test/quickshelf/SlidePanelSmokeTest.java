@@ -41,6 +41,7 @@ public class SlidePanelSmokeTest {
                 panel.show();
                 return null;
             });
+            check("shelf is inside the panel", onEdt(() -> panel.shelf() != null));
             check("starts closed", !onEdt(panel::isOpen));
             check("panel hidden at the start", !onEdt(panel::isPanelVisible));
             equal("panel parked off-screen", onEdt(panel::hiddenX), onEdt(panel::panelX));

@@ -40,6 +40,7 @@ public class SlidePanel {
 
     private final JWindow panel = new JWindow();
     private final JWindow handle = new JWindow();
+    private final ShelfView shelf = new ShelfView();
     private final Rectangle screen;
     private final Timer timer;
 
@@ -100,6 +101,10 @@ public class SlidePanel {
         return panel.isVisible();
     }
 
+    ShelfView shelf() {
+        return shelf;
+    }
+
     int shownX() {
         return screen.x + screen.width - PANEL_WIDTH;
     }
@@ -143,7 +148,7 @@ public class SlidePanel {
         JLabel title = new JLabel("Quick Shelf");
         title.setForeground(TEXT);
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
-        JLabel hint = new JLabel("Your files and folders will live here.");
+        JLabel hint = new JLabel("Drag files or folders here");
         hint.setForeground(MUTED);
 
         JPanel header = new JPanel(new BorderLayout(0, 4));
@@ -151,6 +156,7 @@ public class SlidePanel {
         header.add(title, BorderLayout.NORTH);
         header.add(hint, BorderLayout.CENTER);
         content.add(header, BorderLayout.NORTH);
+        content.add(shelf, BorderLayout.CENTER);
         panel.setContentPane(content);
     }
 
