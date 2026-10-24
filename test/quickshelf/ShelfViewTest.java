@@ -39,6 +39,7 @@ public class ShelfViewTest {
 
         File c = Files.createFile(dir.resolve("gamma.txt")).toFile();
         equal("a mixed drop adds only the new file", 1, view.addFiles(Arrays.asList(a, c, missing)));
+        equal("four items now", 4, view.items().size());
         equal("new item goes to the end", "gamma.txt", names(view).get(3));
 
         check("folder is recognised", view.items().get(2).isDirectory());
@@ -48,6 +49,37 @@ public class ShelfViewTest {
                         && view.getViewport().getTransferHandler() != null
                         && view.getViewport().getView() instanceof javax.swing.JComponent
                         && ((javax.swing.JComponent) view.getViewport().getView()).getTransferHandler() != null);
+
+        // ---- open, move, remove ----
+        List<File> launched = new ArrayList<>();
+        view.setOpener(new PathOpener(launched::add));
+
+        check("open at a valid row", view.openAt(0));
+        equal("opened the first item", a.toPath().toAbsolutePath().normalize(), launched.get(0).toPath());
+        check("open at a bad row is false", !view.openAt(99) && !view.openAt(-1));
+
+        Files.delete(c.toPath());
+        check("opening a deleted file returns false", !view.openAt(3));
+        equal("deleted file never launched", 1, launched.size());
+        equal("deleted file stays on the shelf", 4, view.items().size());
+
+        // order is now alpha, beta, docs, gamma
+        equal("move down returns the new index", 1, view.moveItem(0, 1));
+        equal("order after move down", List.of("beta.txt", "alpha.txt", "docs", "gamma.txt"), names(view));
+        equal("move up returns the new index", 0, view.moveItem(1, -1));
+        equal("order after move up", List.of("alpha.txt", "beta.txt", "docs", "gamma.txt"), names(view));
+        equal("first item cannot move up", 0, view.moveItem(0, -1));
+        equal("last item cannot move down", 3, view.moveItem(3, 1));
+        equal("bad index is left alone", 99, view.moveItem(99, 1));
+        equal("order unchanged by no-op moves", List.of("alpha.txt", "beta.txt", "docs", "gamma.txt"), names(view));
+
+        check("remove a middle item", view.removeAt(1));
+        equal("order after remove", List.of("alpha.txt", "docs", "gamma.txt"), names(view));
+        check("remove at a bad index is false", !view.removeAt(9) && !view.removeAt(-1));
+        check("remove the rest", view.removeAt(0) && view.removeAt(0) && view.removeAt(0));
+        equal("shelf is empty again", 0, view.items().size());
+        check("removing from an empty shelf is false", !view.removeAt(0));
+        equal("a removed file can be added again", 1, view.addFiles(List.of(a)));
 
         TestRunner.finish();
     }
