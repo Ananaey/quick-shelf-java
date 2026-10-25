@@ -27,7 +27,7 @@ The window smoke test briefly opens real windows. It skips itself on machines wi
 - [x] Day 1: frameless always-on-top panel, edge handle, slide animation
 - [x] Day 2: drag files and folders in from Explorer (shown with their Windows icons)
 - [x] Day 3: double-click (or Enter) to open, right-click menu (Open, Show in folder, Move up/down, Remove), Delete key removes
-- [ ] Day 4: save the shelf between runs
+- [x] Day 4: save the shelf between runs (`%APPDATA%\QuickShelf\shelf.txt`, one path per line)
 - [ ] Day 5: light and dark themes, search
 - [ ] Day 6: system tray icon and start with Windows
 - [ ] Day 7: `jpackage` installer and a GitHub Release
