@@ -1,6 +1,8 @@
 package quickshelf;
 
 import java.awt.GraphicsEnvironment;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import javax.swing.SwingUtilities;
@@ -35,7 +37,8 @@ public class SlidePanelSmokeTest {
             return;
         }
 
-        SlidePanel panel = onEdt(SlidePanel::new);
+        Path store = Files.createTempDirectory("smoke-test").resolve("shelf.txt");
+        SlidePanel panel = onEdt(() -> new SlidePanel(store));
         try {
             onEdt(() -> {
                 panel.show();

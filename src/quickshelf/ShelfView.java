@@ -55,8 +55,16 @@ public class ShelfView extends JScrollPane {
         }
     };
     private transient PathOpener opener = new PathOpener();
+    private final transient ShelfStorage storage;
 
+    /** A shelf saved in the default location (%APPDATA%\QuickShelf). */
     public ShelfView() {
+        this(ShelfStorage.defaultPath());
+    }
+
+    /** A shelf saved in the given file. Items saved earlier are loaded right away. */
+    public ShelfView(Path storageFile) {
+        this.storage = new ShelfStorage(storageFile);
         list.setBackground(BACKGROUND);
         list.setForeground(TEXT);
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -94,6 +102,31 @@ public class ShelfView extends JScrollPane {
         });
         bindKey(KeyEvent.VK_ENTER, "open", () -> openAt(list.getSelectedIndex()));
         bindKey(KeyEvent.VK_DELETE, "remove", () -> removeAt(list.getSelectedIndex()));
+
+        loadSaved();
+    }
+
+    /** Restores the saved shelf. Files that have since gone missing stay listed, dimmed. */
+    private void loadSaved() {
+        for (Path path : storage.load()) {
+            ShelfItem item = new ShelfItem(path);
+            if (!model.contains(item)) {
+                model.addElement(item);
+            }
+        }
+    }
+
+    private void persist() {
+        List<Path> paths = new ArrayList<>();
+        for (ShelfItem item : items()) {
+            paths.add(item.getPath());
+        }
+        try {
+            storage.save(paths);
+        } catch (IOException e) {
+            // A failed save must never break the shelf; the items are still in memory.
+            System.err.println("Quick Shelf: could not save the shelf: " + e.getMessage());
+        }
     }
 
     // ---- actions (package-private so tests can call them without a mouse) ---------------
@@ -106,6 +139,9 @@ public class ShelfView extends JScrollPane {
         }
         List<ShelfItem> added = ShelfItem.newItems(paths, items());
         added.forEach(model::addElement);
+        if (!added.isEmpty()) {
+            persist();
+        }
         return added.size();
     }
 
@@ -136,6 +172,7 @@ public class ShelfView extends JScrollPane {
         if (!model.isEmpty()) {
             list.setSelectedIndex(Math.min(index, model.size() - 1));
         }
+        persist();
         return true;
     }
 
@@ -148,6 +185,7 @@ public class ShelfView extends JScrollPane {
         ShelfItem item = model.remove(index);
         model.add(target, item);
         list.setSelectedIndex(target);
+        persist();
         return target;
     }
 

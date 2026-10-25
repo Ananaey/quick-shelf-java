@@ -13,6 +13,7 @@ import java.awt.Toolkit;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.RoundRectangle2D;
+import java.nio.file.Path;
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -40,7 +41,7 @@ public class SlidePanel {
 
     private final JWindow panel = new JWindow();
     private final JWindow handle = new JWindow();
-    private final ShelfView shelf = new ShelfView();
+    private final ShelfView shelf;
     private final Rectangle screen;
     private final Timer timer;
 
@@ -50,7 +51,14 @@ public class SlidePanel {
     private long startedAt;
     private long durationMs;
 
+    /** A panel whose shelf is saved in the default location. */
     public SlidePanel() {
+        this(ShelfStorage.defaultPath());
+    }
+
+    /** A panel whose shelf is saved in the given file (tests use a temporary one). */
+    public SlidePanel(Path storageFile) {
+        this.shelf = new ShelfView(storageFile);
         this.screen = usableScreen();
         buildPanel();
         buildHandle();

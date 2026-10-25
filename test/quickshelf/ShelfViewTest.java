@@ -26,7 +26,8 @@ public class ShelfViewTest {
         File folder = Files.createDirectory(dir.resolve("docs")).toFile();
         File missing = dir.resolve("gone.txt").toFile();
 
-        ShelfView view = new ShelfView();
+        Path store = dir.resolve("store").resolve("shelf.txt");
+        ShelfView view = new ShelfView(store);
         equal("starts empty", 0, view.items().size());
 
         equal("first drop adds three", 3, view.addFiles(Arrays.asList(a, b, folder)));
@@ -80,6 +81,31 @@ public class ShelfViewTest {
         equal("shelf is empty again", 0, view.items().size());
         check("removing from an empty shelf is false", !view.removeAt(0));
         equal("a removed file can be added again", 1, view.addFiles(List.of(a)));
+
+        // ---- saving between runs: a second view on the same file is a "restart" ----
+        File d = Files.createFile(dir.resolve("delta.txt")).toFile();
+        File e = Files.createFile(dir.resolve("epsilon.txt")).toFile();
+        view.addFiles(Arrays.asList(d, e));
+        view.moveItem(2, -1); // alpha, epsilon, delta
+        equal("order before restart", List.of("alpha.txt", "epsilon.txt", "delta.txt"), names(view));
+
+        ShelfView restarted = new ShelfView(store);
+        equal("a restart restores the same items in the same order",
+                List.of("alpha.txt", "epsilon.txt", "delta.txt"), names(restarted));
+
+        restarted.removeAt(1);
+        equal("a removal is saved", List.of("alpha.txt", "delta.txt"), names(new ShelfView(store)));
+
+        Files.delete(d.toPath());
+        ShelfView afterDelete = new ShelfView(store);
+        equal("a file deleted while closed stays listed", List.of("alpha.txt", "delta.txt"), names(afterDelete));
+        check("and shows as missing", !afterDelete.items().get(1).exists());
+
+        equal("a drop with only duplicates saves nothing new", 0, afterDelete.addFiles(List.of(a)));
+        equal("no duplicate rows after reload", 2, new ShelfView(store).items().size());
+
+        ShelfView unsaved = new ShelfView(dir.resolve("never-saved").resolve("shelf.txt"));
+        equal("a fresh location starts empty", 0, unsaved.items().size());
 
         TestRunner.finish();
     }
