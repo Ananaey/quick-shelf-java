@@ -1,20 +1,32 @@
 package quickshelf;
 
 import java.awt.BorderLayout;
-import java.awt.Color;
+import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GraphicsConfiguration;
 import java.awt.GraphicsEnvironment;
 import java.awt.Insets;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.Toolkit;
+import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.geom.Arc2D;
+import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
 import java.nio.file.Path;
+import javax.swing.Box;
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
+import javax.swing.Icon;
+import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JWindow;
@@ -23,6 +35,9 @@ import javax.swing.Timer;
 /**
  * A frameless, always-on-top panel that slides in from the right edge of the screen,
  * plus a thin handle tab that toggles it. The handle rides along the panel's left edge.
+ *
+ * <p>The panel is an undecorated JFrame, not a JWindow: a JWindow can never take keyboard
+ * focus, so typing in the search box and the Enter / Delete keys would not work.
  */
 public class SlidePanel {
     static final int PANEL_WIDTH = 320;
@@ -33,36 +48,45 @@ public class SlidePanel {
     static final int ANIMATION_MS = 220;
     private static final int FRAME_MS = 15;
 
-    private static final Color PANEL_BG = new Color(30, 30, 34);
-    private static final Color HANDLE_BG = new Color(60, 60, 68);
-    private static final Color HANDLE_HOVER = new Color(95, 95, 108);
-    private static final Color TEXT = new Color(242, 242, 247);
-    private static final Color MUTED = new Color(154, 154, 162);
-
-    private final JWindow panel = new JWindow();
+    private final JFrame panel = new JFrame("Quick Shelf");
     private final JWindow handle = new JWindow();
     private final ShelfView shelf;
     private final Rectangle screen;
     private final Timer timer;
 
+    private final JPanel content = new JPanel(new BorderLayout(0, 8));
+    private final JPanel header = new JPanel();
+    private final JLabel title = new JLabel("Quick Shelf");
+    private final JLabel hint = new JLabel("Drag files or folders here");
+    private final JButton themeButton = new JButton();
+    private final SearchField search;
+    private final JPanel handleTab = new JPanel();
+
+    private Theme theme = Theme.DARK;
     private boolean open = false;
     private int fromX;
     private int toX;
     private long startedAt;
     private long durationMs;
 
-    /** A panel whose shelf is saved in the default location. */
+    /** A panel whose shelf is saved in the default location, using the system theme. */
     public SlidePanel() {
-        this(ShelfStorage.defaultPath());
+        this(ShelfStorage.defaultPath(), ThemeDetector.detect());
     }
 
     /** A panel whose shelf is saved in the given file (tests use a temporary one). */
     public SlidePanel(Path storageFile) {
+        this(storageFile, Theme.DARK);
+    }
+
+    public SlidePanel(Path storageFile, Theme initialTheme) {
         this.shelf = new ShelfView(storageFile);
+        this.search = new SearchField(shelf::setQuery);
         this.screen = usableScreen();
         buildPanel();
         buildHandle();
         this.timer = new Timer(FRAME_MS, event -> tick());
+        setTheme(initialTheme);
         placeAt(hiddenX());
     }
 
@@ -77,12 +101,28 @@ public class SlidePanel {
         open = !open;
         if (open) {
             panel.setVisible(true);
+            panel.toFront();
         }
         fromX = panel.getX();
         toX = open ? shownX() : hiddenX();
         startedAt = System.currentTimeMillis();
         durationMs = SlideMath.durationFor(fromX, toX, PANEL_WIDTH, ANIMATION_MS);
         timer.restart();
+    }
+
+    public void setTheme(Theme newTheme) {
+        this.theme = newTheme;
+        content.setBackground(newTheme.panelBackground);
+        title.setForeground(newTheme.text);
+        hint.setForeground(newTheme.muted);
+        search.applyTheme(newTheme);
+        shelf.setTheme(newTheme);
+        handleTab.setBackground(newTheme.handle);
+        themeButton.repaint();
+    }
+
+    public Theme getTheme() {
+        return theme;
     }
 
     public void dispose() {
@@ -109,8 +149,21 @@ public class SlidePanel {
         return panel.isVisible();
     }
 
+    /** True if the panel can receive key presses (needed for search, Enter and Delete). */
+    boolean acceptsKeyboardInput() {
+        return panel.isFocusableWindow();
+    }
+
     ShelfView shelf() {
         return shelf;
+    }
+
+    SearchField search() {
+        return search;
+    }
+
+    JButton themeButton() {
+        return themeButton;
     }
 
     int shownX() {
@@ -144,25 +197,42 @@ public class SlidePanel {
     // ---- window construction ----------------------------------------------------
 
     private void buildPanel() {
+        panel.setUndecorated(true);
+        panel.setType(Window.Type.UTILITY); // no taskbar button
         panel.setAlwaysOnTop(true);
         panel.setSize(PANEL_WIDTH, PANEL_HEIGHT);
         // The shape is wider than the window, so only the left corners are rounded.
         panel.setShape(new RoundRectangle2D.Double(0, 0, PANEL_WIDTH + 40, PANEL_HEIGHT, 32, 32));
 
-        JPanel content = new JPanel(new BorderLayout(0, 6));
-        content.setBackground(PANEL_BG);
         content.setBorder(BorderFactory.createEmptyBorder(22, 22, 22, 22));
 
-        JLabel title = new JLabel("Quick Shelf");
-        title.setForeground(TEXT);
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
-        JLabel hint = new JLabel("Drag files or folders here");
-        hint.setForeground(MUTED);
 
-        JPanel header = new JPanel(new BorderLayout(0, 4));
+        themeButton.setIcon(new HalfMoonIcon());
+        themeButton.setToolTipText("Switch light / dark");
+        themeButton.setBorderPainted(false);
+        themeButton.setContentAreaFilled(false);
+        themeButton.setFocusPainted(false);
+        themeButton.setFocusable(false);
+        themeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        themeButton.addActionListener(event -> setTheme(theme.toggled()));
+
+        JPanel titleRow = new JPanel(new BorderLayout());
+        titleRow.setOpaque(false);
+        titleRow.add(title, BorderLayout.WEST);
+        titleRow.add(themeButton, BorderLayout.EAST);
+
         header.setOpaque(false);
-        header.add(title, BorderLayout.NORTH);
-        header.add(hint, BorderLayout.CENTER);
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+        for (JComponent part : new JComponent[] {titleRow, hint, search}) {
+            part.setAlignmentX(Component.LEFT_ALIGNMENT);
+        }
+        header.add(titleRow);
+        header.add(Box.createVerticalStrut(2));
+        header.add(hint);
+        header.add(Box.createVerticalStrut(10));
+        header.add(search);
+
         content.add(header, BorderLayout.NORTH);
         content.add(shelf, BorderLayout.CENTER);
         panel.setContentPane(content);
@@ -173,11 +243,9 @@ public class SlidePanel {
         handle.setSize(new Dimension(HANDLE_WIDTH, HANDLE_HEIGHT));
         handle.setShape(new RoundRectangle2D.Double(0, 0, HANDLE_WIDTH + 14, HANDLE_HEIGHT, 14, 14));
 
-        JPanel tab = new JPanel();
-        tab.setBackground(HANDLE_BG);
-        tab.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        tab.setToolTipText("Quick Shelf");
-        tab.addMouseListener(new MouseAdapter() {
+        handleTab.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        handleTab.setToolTipText("Quick Shelf");
+        handleTab.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 toggle();
@@ -185,15 +253,15 @@ public class SlidePanel {
 
             @Override
             public void mouseEntered(MouseEvent e) {
-                tab.setBackground(HANDLE_HOVER);
+                handleTab.setBackground(theme.handleHover);
             }
 
             @Override
             public void mouseExited(MouseEvent e) {
-                tab.setBackground(HANDLE_BG);
+                handleTab.setBackground(theme.handle);
             }
         });
-        handle.setContentPane(tab);
+        handle.setContentPane(handleTab);
     }
 
     /** The primary screen minus the taskbar, so the panel never hides behind it. */
@@ -207,5 +275,30 @@ public class SlidePanel {
                 bounds.y + insets.top,
                 bounds.width - insets.left - insets.right,
                 bounds.height - insets.top - insets.bottom);
+    }
+
+    /** A small circle with one half filled, drawn in the current theme's muted colour. */
+    private final class HalfMoonIcon implements Icon {
+        private static final int SIZE = 18;
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(theme.muted);
+            g2.draw(new Ellipse2D.Double(x + 1, y + 1, SIZE - 3, SIZE - 3));
+            g2.fill(new Arc2D.Double(x + 1, y + 1, SIZE - 3, SIZE - 3, 90, 180, Arc2D.CHORD));
+            g2.dispose();
+        }
+
+        @Override
+        public int getIconWidth() {
+            return SIZE;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return SIZE;
+        }
     }
 }
