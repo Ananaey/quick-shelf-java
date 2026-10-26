@@ -57,6 +57,36 @@ public class SlidePanelSmokeTest {
             check("panel visible while opening", onEdt(panel::isPanelVisible));
             waitForAnimation(panel);
             equal("panel fully slid in", onEdt(panel::shownX), onEdt(panel::panelX));
+            check("panel can take keyboard input (search, Enter, Delete)", onEdt(panel::acceptsKeyboardInput));
+
+            // theme button: dark -> light -> dark
+            equal("starts dark", Theme.DARK, onEdt(panel::getTheme));
+            onEdt(() -> {
+                panel.themeButton().doClick();
+                return null;
+            });
+            equal("button switches to light", Theme.LIGHT, onEdt(panel::getTheme));
+            onEdt(() -> {
+                panel.themeButton().doClick();
+                return null;
+            });
+            equal("button switches back to dark", Theme.DARK, onEdt(panel::getTheme));
+
+            // search box filters the shelf
+            Path folder = store.getParent();
+            java.io.File one = Files.createFile(folder.resolve("one.txt")).toFile();
+            java.io.File two = Files.createFile(folder.resolve("two.txt")).toFile();
+            equal("two files added", 2, onEdt(() -> panel.shelf().addFiles(java.util.List.of(one, two))));
+            onEdt(() -> {
+                panel.search().setText("two");
+                return null;
+            });
+            equal("typing filters the list", 1, onEdt(() -> panel.shelf().visibleItems().size()));
+            onEdt(() -> {
+                panel.search().setText("");
+                return null;
+            });
+            equal("clearing the box shows everything", 2, onEdt(() -> panel.shelf().visibleItems().size()));
 
             onEdt(() -> {
                 panel.toggle();

@@ -32,16 +32,18 @@ import javax.swing.filechooser.FileSystemView;
 /**
  * The scrolling list of shelf items.
  * Drag files in from Explorer, double-click (or press Enter) to open, right-click for more,
- * Delete to remove.
+ * Delete to remove, and type in the search box to filter.
+ *
+ * <p>{@code model} holds every item and is what gets saved. {@code shown} is what the list
+ * displays: the items that match the current search. Row positions passed to the action
+ * methods are positions in the displayed list.
  */
 public class ShelfView extends JScrollPane {
     private static final long serialVersionUID = 1L;
-    private static final Color BACKGROUND = new Color(30, 30, 34);
-    private static final Color TEXT = new Color(242, 242, 247);
-    private static final Color SELECTED = new Color(10, 132, 255);
 
     private final DefaultListModel<ShelfItem> model = new DefaultListModel<>();
-    private final JList<ShelfItem> list = new JList<>(model) {
+    private final DefaultListModel<ShelfItem> shown = new DefaultListModel<>();
+    private final JList<ShelfItem> list = new JList<>(shown) {
         private static final long serialVersionUID = 1L;
 
         @Override
@@ -50,12 +52,14 @@ public class ShelfView extends JScrollPane {
             if (index < 0) {
                 return null;
             }
-            ShelfItem item = model.get(index);
+            ShelfItem item = shown.get(index);
             return item.exists() ? item.getPath().toString() : item.getPath() + "  (not found)";
         }
     };
     private transient PathOpener opener = new PathOpener();
     private final transient ShelfStorage storage;
+    private transient Theme theme = Theme.DARK;
+    private String query = "";
 
     /** A shelf saved in the default location (%APPDATA%\QuickShelf). */
     public ShelfView() {
@@ -65,8 +69,6 @@ public class ShelfView extends JScrollPane {
     /** A shelf saved in the given file. Items saved earlier are loaded right away. */
     public ShelfView(Path storageFile) {
         this.storage = new ShelfStorage(storageFile);
-        list.setBackground(BACKGROUND);
-        list.setForeground(TEXT);
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer(new ItemRenderer());
         list.setFixedCellHeight(34);
@@ -74,7 +76,7 @@ public class ShelfView extends JScrollPane {
 
         setViewportView(list);
         setBorder(BorderFactory.createEmptyBorder());
-        getViewport().setBackground(BACKGROUND);
+        setTheme(Theme.DARK);
 
         // Accept drops anywhere in the view, not just on rows (the list may be short or empty).
         TransferHandler handler = new FileDropHandler();
@@ -106,6 +108,107 @@ public class ShelfView extends JScrollPane {
         loadSaved();
     }
 
+    // ---- public API -------------------------------------------------------------
+
+    /** Adds files and folders to the shelf and returns how many were new. */
+    public int addFiles(List<File> files) {
+        List<Path> paths = new ArrayList<>();
+        for (File file : files) {
+            paths.add(file == null ? null : file.toPath());
+        }
+        List<ShelfItem> added = ShelfItem.newItems(paths, items());
+        added.forEach(model::addElement);
+        if (!added.isEmpty()) {
+            refresh();
+            persist();
+        }
+        return added.size();
+    }
+
+    /** Every item on the shelf, in saved order, whatever the search says. */
+    public List<ShelfItem> items() {
+        return Collections.list(model.elements());
+    }
+
+    /** Only the items the current search shows. */
+    public List<ShelfItem> visibleItems() {
+        return Collections.list(shown.elements());
+    }
+
+    /** Filters the list. A blank query shows everything. */
+    public void setQuery(String text) {
+        this.query = text == null ? "" : text;
+        refresh();
+    }
+
+    public void setTheme(Theme newTheme) {
+        this.theme = newTheme;
+        list.setBackground(newTheme.panelBackground);
+        list.setForeground(newTheme.text);
+        getViewport().setBackground(newTheme.panelBackground);
+        list.repaint();
+    }
+
+    // ---- actions on a displayed row (package-private so tests can call them) ------------
+
+    /** Opens the item at a displayed row. A missing file is not an error: the row shows as not found. */
+    boolean openAt(int index) {
+        if (index < 0 || index >= shown.size()) {
+            return false;
+        }
+        boolean opened = opener.open(shown.get(index).getPath());
+        list.repaint(); // refresh the dimmed "not found" look
+        return opened;
+    }
+
+    boolean showInFolderAt(int index) {
+        return index >= 0 && index < shown.size() && opener.openParent(shown.get(index).getPath());
+    }
+
+    /** Removes the item at a displayed row and keeps a sensible row selected. */
+    boolean removeAt(int index) {
+        if (index < 0 || index >= shown.size()) {
+            return false;
+        }
+        model.removeElement(shown.get(index));
+        refresh();
+        if (!shown.isEmpty()) {
+            list.setSelectedIndex(Math.min(index, shown.size() - 1));
+        }
+        persist();
+        return true;
+    }
+
+    /**
+     * Moves an item up (negative delta) or down and returns its new row. Reordering is only
+     * possible while no search is active, because hidden rows would make the result confusing.
+     */
+    int moveItem(int index, int delta) {
+        if (isSearching() || index < 0 || index >= model.size()) {
+            return index;
+        }
+        int target = Reorder.target(model.size(), index, delta);
+        if (target == index) {
+            return index;
+        }
+        ShelfItem item = model.remove(index);
+        model.add(target, item);
+        refresh();
+        list.setSelectedIndex(target);
+        persist();
+        return target;
+    }
+
+    boolean isSearching() {
+        return !query.isBlank();
+    }
+
+    void setOpener(PathOpener opener) {
+        this.opener = opener;
+    }
+
+    // ---- internals ------------------------------------------------------------------
+
     /** Restores the saved shelf. Files that have since gone missing stay listed, dimmed. */
     private void loadSaved() {
         for (Path path : storage.load()) {
@@ -114,6 +217,7 @@ public class ShelfView extends JScrollPane {
                 model.addElement(item);
             }
         }
+        refresh();
     }
 
     private void persist() {
@@ -129,73 +233,21 @@ public class ShelfView extends JScrollPane {
         }
     }
 
-    // ---- actions (package-private so tests can call them without a mouse) ---------------
-
-    /** Adds files and folders to the shelf and returns how many were new. */
-    public int addFiles(List<File> files) {
-        List<Path> paths = new ArrayList<>();
-        for (File file : files) {
-            paths.add(file == null ? null : file.toPath());
+    /** Rebuilds the displayed rows from the full shelf and the search, keeping the selection if it survives. */
+    private void refresh() {
+        ShelfItem selected = list.getSelectedValue();
+        shown.clear();
+        for (ShelfItem item : Collections.list(model.elements())) {
+            if (ShelfFilter.matches(item, query)) {
+                shown.addElement(item);
+            }
         }
-        List<ShelfItem> added = ShelfItem.newItems(paths, items());
-        added.forEach(model::addElement);
-        if (!added.isEmpty()) {
-            persist();
+        if (selected != null && shown.contains(selected)) {
+            list.setSelectedValue(selected, true);
         }
-        return added.size();
     }
 
-    public List<ShelfItem> items() {
-        return Collections.list(model.elements());
-    }
-
-    /** Opens the item at index. A missing file is not an error: the row just shows as not found. */
-    boolean openAt(int index) {
-        if (index < 0 || index >= model.size()) {
-            return false;
-        }
-        boolean opened = opener.open(model.get(index).getPath());
-        list.repaint(); // refresh the dimmed "not found" look
-        return opened;
-    }
-
-    boolean showInFolderAt(int index) {
-        return index >= 0 && index < model.size() && opener.openParent(model.get(index).getPath());
-    }
-
-    /** Removes the item at index and keeps a sensible row selected. Returns false if index is invalid. */
-    boolean removeAt(int index) {
-        if (index < 0 || index >= model.size()) {
-            return false;
-        }
-        model.remove(index);
-        if (!model.isEmpty()) {
-            list.setSelectedIndex(Math.min(index, model.size() - 1));
-        }
-        persist();
-        return true;
-    }
-
-    /** Moves an item up (negative delta) or down and returns its new index. */
-    int moveItem(int index, int delta) {
-        int target = Reorder.target(model.size(), index, delta);
-        if (target == index || index < 0 || index >= model.size()) {
-            return index;
-        }
-        ShelfItem item = model.remove(index);
-        model.add(target, item);
-        list.setSelectedIndex(target);
-        persist();
-        return target;
-    }
-
-    void setOpener(PathOpener opener) {
-        this.opener = opener;
-    }
-
-    // ---- UI plumbing ----------------------------------------------------------------
-
-    /** Row under the mouse, or -1 if the pointer is on empty space. */
+    /** Displayed row under the mouse, or -1 if the pointer is on empty space. */
     private int rowAt(MouseEvent event) {
         int index = list.locationToIndex(event.getPoint());
         if (index < 0 || !list.getCellBounds(index, index).contains(event.getPoint())) {
@@ -214,12 +266,13 @@ public class ShelfView extends JScrollPane {
         }
         list.setSelectedIndex(index);
 
+        boolean canMove = !isSearching();
         JPopupMenu menu = new JPopupMenu();
         menu.add(menuItem("Open", true, () -> openAt(index)));
         menu.add(menuItem("Show in folder", true, () -> showInFolderAt(index)));
         menu.addSeparator();
-        menu.add(menuItem("Move up", index > 0, () -> moveItem(index, -1)));
-        menu.add(menuItem("Move down", index < model.size() - 1, () -> moveItem(index, 1)));
+        menu.add(menuItem("Move up", canMove && index > 0, () -> moveItem(index, -1)));
+        menu.add(menuItem("Move down", canMove && index < shown.size() - 1, () -> moveItem(index, 1)));
         menu.addSeparator();
         menu.add(menuItem("Remove from shelf", true, () -> removeAt(index)));
         menu.show(list, e.getX(), e.getY());
@@ -270,10 +323,9 @@ public class ShelfView extends JScrollPane {
         }
     }
 
-    /** Shows the Windows icon and the name; missing files are dimmed. */
-    private static class ItemRenderer extends DefaultListCellRenderer {
+    /** Shows the Windows icon and the name in the current theme; missing files are dimmed. */
+    private class ItemRenderer extends DefaultListCellRenderer {
         private static final long serialVersionUID = 1L;
-        private static final Color DIMMED = new Color(110, 110, 115);
 
         @Override
         public Component getListCellRendererComponent(
@@ -285,8 +337,12 @@ public class ShelfView extends JScrollPane {
             setIconTextGap(10);
             setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
             setOpaque(true);
-            setBackground(isSelected ? SELECTED : BACKGROUND);
-            setForeground(item.exists() ? TEXT : DIMMED);
+            setBackground(isSelected ? theme.selected : theme.panelBackground);
+            if (isSelected) {
+                setForeground(Color.WHITE);
+            } else {
+                setForeground(item.exists() ? theme.text : theme.muted);
+            }
             return this;
         }
     }

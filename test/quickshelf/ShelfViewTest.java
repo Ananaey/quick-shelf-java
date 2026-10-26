@@ -14,8 +14,12 @@ import static quickshelf.TestRunner.equal;
 /** Uses the real list and drop handler, but never opens a window, so it runs without a display. */
 public class ShelfViewTest {
     private static List<String> names(ShelfView view) {
+        return names(view.items());
+    }
+
+    private static List<String> names(List<ShelfItem> items) {
         List<String> result = new ArrayList<>();
-        view.items().forEach(item -> result.add(item.getName()));
+        items.forEach(item -> result.add(item.getName()));
         return result;
     }
 
@@ -106,6 +110,64 @@ public class ShelfViewTest {
 
         ShelfView unsaved = new ShelfView(dir.resolve("never-saved").resolve("shelf.txt"));
         equal("a fresh location starts empty", 0, unsaved.items().size());
+
+        // ---- search ----
+        Path store2 = dir.resolve("search-store").resolve("shelf.txt");
+        ShelfView s = new ShelfView(store2);
+        File finalReport = Files.createFile(dir.resolve("report-final.txt")).toFile();
+        File budget = Files.createFile(dir.resolve("budget.txt")).toFile();
+        File draftReport = Files.createFile(dir.resolve("report-draft.txt")).toFile();
+        s.addFiles(Arrays.asList(finalReport, budget, draftReport));
+        equal("no search shows everything", 3, s.visibleItems().size());
+
+        s.setQuery("report");
+        equal("search keeps only matches", 2, s.visibleItems().size());
+        equal("search keeps their order", "report-final.txt", s.visibleItems().get(0).getName());
+        equal("search never changes the full shelf", 3, s.items().size());
+        equal("search never changes what is saved", 3, new ShelfView(store2).items().size());
+        check("searching is reported", s.isSearching());
+
+        s.setQuery("zzz");
+        equal("a search with no matches shows nothing", 0, s.visibleItems().size());
+        check("actions on an empty result are safe", !s.openAt(0) && !s.removeAt(0) && s.moveItem(0, 1) == 0);
+        s.setQuery("   ");
+        equal("a blank search shows everything again", 3, s.visibleItems().size());
+        check("a blank search is not searching", !s.isSearching());
+        s.setQuery(null);
+        equal("a null search is treated as blank", 3, s.visibleItems().size());
+
+        s.setQuery("draft");
+        equal("one match", List.of("report-draft.txt"), names(s.visibleItems()));
+        equal("moving is blocked while searching", 0, s.moveItem(0, 1));
+        equal("blocked move changes nothing", List.of("report-final.txt", "budget.txt", "report-draft.txt"),
+                names(s.items()));
+
+        List<File> opened2 = new ArrayList<>();
+        s.setOpener(new PathOpener(opened2::add));
+        check("open acts on the displayed row", s.openAt(0));
+        equal("it opened the matching file, not the first on the shelf",
+                draftReport.toPath().toAbsolutePath().normalize(), opened2.get(0).toPath());
+
+        check("remove acts on the displayed row", s.removeAt(0));
+        equal("the right item was removed", List.of("report-final.txt", "budget.txt"), names(s.items()));
+        equal("the removal is saved", 2, new ShelfView(store2).items().size());
+        equal("the search still applies after a removal", 0, s.visibleItems().size());
+
+        s.setQuery("budget");
+        File extra = Files.createFile(dir.resolve("extra.txt")).toFile();
+        equal("a drop while searching still adds", 1, s.addFiles(List.of(extra)));
+        equal("the new item is on the shelf", 3, s.items().size());
+        equal("but is hidden because it does not match", List.of("budget.txt"), names(s.visibleItems()));
+        s.setQuery("");
+        equal("clearing the search reveals it", 3, s.visibleItems().size());
+
+        // moving works again once the search is cleared
+        equal("move works when not searching", 1, s.moveItem(0, 1));
+        equal("order after the move", List.of("budget.txt", "report-final.txt", "extra.txt"), names(s.items()));
+
+        s.setTheme(Theme.LIGHT);
+        s.setTheme(Theme.DARK);
+        equal("switching theme keeps the items", 3, s.items().size());
 
         TestRunner.finish();
     }
