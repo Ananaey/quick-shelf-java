@@ -1,0 +1,40 @@
+name: release
+
+# Pushing a tag like v0.2.0 builds the portable Windows app and publishes it as a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Work out the version number from the tag
+        id: version
+        shell: bash
+        run: echo "number=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the portable app
+        shell: cmd
+        run: package.bat ${{ steps.version.outputs.number }}
+
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/QuickShelf-${{ steps.version.outputs.number }}-windows.zip" \
+            --title "Quick Shelf $GITHUB_REF_NAME" \
+            --notes "Portable Windows app. Unzip it and run QuickShelf\\QuickShelf.exe. Java is bundled, nothing else to install. The app is not code-signed, so Windows SmartScreen may show an 'unknown publisher' warning: choose More info, then Run anyway." \
+            --prerelease
