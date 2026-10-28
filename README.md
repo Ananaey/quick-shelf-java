@@ -4,9 +4,28 @@
 
 A slide-out sidebar for your desktop, written in plain Java (Swing, no libraries). Keep files and folders in one place and open them with a double-click.
 
-Click the thin tab on the right edge of the screen to slide the shelf open or closed.
+Click the thin tab on the right edge of the screen (or the tray icon) to slide the shelf open or closed.
 
-## Run
+## Download (Windows)
+
+1. Get the latest `QuickShelf-...-windows.zip` from the [Releases](https://github.com/Ananaey/quick-shelf-java/releases) page.
+2. Unzip it anywhere.
+3. Run `QuickShelf\QuickShelf.exe`.
+
+Java is already bundled, so you do not need to install anything. The app is not code-signed, so Windows SmartScreen may say "unknown publisher": choose **More info**, then **Run anyway**.
+
+## Use
+
+- **Add:** drag files or folders from Explorer onto the open shelf.
+- **Open:** double-click an item, or select it and press Enter.
+- **More:** right-click an item for Open, Show in folder, Move up, Move down and Remove. Delete also removes.
+- **Search:** type in the box at the top. Escape clears it.
+- **Theme:** the half-filled circle switches light and dark. It starts with your Windows setting.
+- **Tray icon:** left-click shows or hides the shelf. Right-click for **Start with Windows** and **Quit**.
+
+Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line.
+
+## Run from source
 
 ```
 run.bat
@@ -20,7 +39,24 @@ Needs JDK 17 or newer.
 .\test.bat
 ```
 
-The window smoke test briefly opens real windows. It skips itself on machines with no display.
+The window and tray smoke tests briefly open real windows and put an icon in the tray. They skip themselves on machines with no display.
+
+## Build the portable app
+
+```
+package.bat 1.0.0
+```
+
+This makes `dist\QuickShelf\QuickShelf.exe` (with its own Java runtime) and a zip next to it. It needs JDK 17 or newer, which includes `jpackage`.
+
+## Publish a release
+
+Push a version tag and GitHub builds and publishes the zip by itself:
+
+```
+git tag v0.2.0
+git push origin v0.2.0
+```
 
 ## Roadmap
 
@@ -29,6 +65,6 @@ The window smoke test briefly opens real windows. It skips itself on machines wi
 - [x] Day 3: double-click (or Enter) to open, right-click menu (Open, Show in folder, Move up/down, Remove), Delete key removes
 - [x] Day 4: save the shelf between runs (`%APPDATA%\QuickShelf\shelf.txt`, one path per line)
 - [x] Day 5: light and dark themes (follows Windows, toggle button in the header) and a search box; keyboard input fixed
-- [ ] Later: remember the chosen theme, groups / pinned sections
 - [x] Day 6: system tray icon (left-click shows or hides the shelf; right-click for "Start with Windows" and "Quit")
-- [ ] Day 7: `jpackage` installer and a GitHub Release
+- [x] Day 7: portable Windows app built with `jpackage` and published as a GitHub Release
+- [ ] Later: remember the chosen theme, groups / pinned sections, a real installer (needs WiX), code signing

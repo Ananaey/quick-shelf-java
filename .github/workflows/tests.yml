@@ -20,6 +20,6 @@ jobs:
           javac -Xlint:all -d out src/quickshelf/*.java test/quickshelf/*.java
       - name: Run tests (no display here, so the window smoke test skips itself)
         run: |
-          for t in SlideMathTest ReorderTest PathOpenerTest ThemeTest ShelfFilterTest ShelfItemTest ShelfStorageTest AutostartTest TrayImageTest ShelfViewTest SlidePanelSmokeTest TraySmokeTest; do
+          for t in SlideMathTest ReorderTest PathOpenerTest ThemeTest ShelfFilterTest ShelfItemTest ShelfStorageTest AutostartTest TrayImageTest IconMakerTest ShelfViewTest SlidePanelSmokeTest TraySmokeTest; do
             java -cp out quickshelf.$t
           done
