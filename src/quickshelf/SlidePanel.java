@@ -19,6 +19,7 @@ import java.awt.event.MouseEvent;
 import java.awt.geom.Arc2D;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
+import java.io.IOException;
 import java.nio.file.Path;
 import javax.swing.Box;
 import javax.swing.BorderFactory;
@@ -51,6 +52,7 @@ public class SlidePanel {
     private final JFrame panel = new JFrame("Quick Shelf");
     private final JWindow handle = new JWindow();
     private final ShelfView shelf;
+    private final Settings settings;
     private final Rectangle screen;
     private final Timer timer;
 
@@ -69,17 +71,23 @@ public class SlidePanel {
     private long startedAt;
     private long durationMs;
 
-    /** A panel whose shelf is saved in the default location, using the system theme. */
+    /** The real app: shelf and settings in %APPDATA%\QuickShelf, theme as last chosen (or the Windows one). */
     public SlidePanel() {
-        this(ShelfStorage.defaultPath(), ThemeDetector.detect());
+        this(ShelfStorage.defaultPath(), Settings.load(Settings.defaultPath()));
     }
 
-    /** A panel whose shelf is saved in the given file (tests use a temporary one). */
+    /** A panel with its own shelf file and nothing saved about settings (tests use temporary files). */
     public SlidePanel(Path storageFile) {
-        this(storageFile, Theme.DARK);
+        this(storageFile, Theme.DARK, Settings.inMemory());
     }
 
-    public SlidePanel(Path storageFile, Theme initialTheme) {
+    /** The theme comes from the settings: the saved choice, or the Windows setting when there is none. */
+    public SlidePanel(Path storageFile, Settings settings) {
+        this(storageFile, ThemeDetector.detect(settings.themePreference()), settings);
+    }
+
+    public SlidePanel(Path storageFile, Theme initialTheme, Settings settings) {
+        this.settings = settings;
         this.shelf = new ShelfView(storageFile);
         this.search = new SearchField(shelf::setQuery);
         this.screen = usableScreen();
@@ -123,6 +131,17 @@ public class SlidePanel {
 
     public Theme getTheme() {
         return theme;
+    }
+
+    /** Saves the current theme as the user's choice, so it is used on the next start. */
+    private void rememberTheme() {
+        settings.setThemePreference(theme.name);
+        try {
+            settings.save();
+        } catch (IOException e) {
+            // Not being able to remember the choice must never break the toggle.
+            System.err.println("Quick Shelf: could not save settings: " + e.getMessage());
+        }
     }
 
     public void dispose() {
@@ -215,7 +234,10 @@ public class SlidePanel {
         themeButton.setFocusPainted(false);
         themeButton.setFocusable(false);
         themeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        themeButton.addActionListener(event -> setTheme(theme.toggled()));
+        themeButton.addActionListener(event -> {
+            setTheme(theme.toggled());
+            rememberTheme();
+        });
 
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);

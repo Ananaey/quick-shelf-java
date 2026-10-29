@@ -14,7 +14,12 @@ public final class ThemeDetector {
 
     /** The theme for the system setting. Dark when it cannot be read. */
     public static Theme detect() {
-        return pick("auto", ThemeDetector::readWindowsLightFlag);
+        return detect("auto");
+    }
+
+    /** The saved choice ("light" or "dark"), or the system setting for anything else. */
+    public static Theme detect(String preference) {
+        return pick(preference, ThemeDetector::readWindowsLightFlag);
     }
 
     /**

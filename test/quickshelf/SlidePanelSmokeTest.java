@@ -105,6 +105,34 @@ public class SlidePanelSmokeTest {
             });
             waitForAnimation(panel);
             equal("double toggle ends closed", onEdt(panel::hiddenX), onEdt(panel::panelX));
+
+            // The theme choice is remembered: click the button, then open a second panel.
+            Path settingsFile = store.getParent().resolve("settings.properties");
+            Theme systemTheme = ThemeDetector.detect("auto");
+            SlidePanel first = onEdt(() -> new SlidePanel(store.getParent().resolve("a.txt"), Settings.load(settingsFile)));
+            try {
+                equal("with nothing saved the system theme is used", systemTheme, onEdt(first::getTheme));
+                onEdt(() -> {
+                    first.themeButton().doClick();
+                    return null;
+                });
+                equal("the button switches the theme", systemTheme.toggled(), onEdt(first::getTheme));
+                check("the choice is written to disk", Files.exists(settingsFile));
+            } finally {
+                onEdt(() -> {
+                    first.dispose();
+                    return null;
+                });
+            }
+            SlidePanel second = onEdt(() -> new SlidePanel(store.getParent().resolve("b.txt"), Settings.load(settingsFile)));
+            try {
+                equal("a new panel starts with the saved choice", systemTheme.toggled(), onEdt(second::getTheme));
+            } finally {
+                onEdt(() -> {
+                    second.dispose();
+                    return null;
+                });
+            }
         } finally {
             onEdt(() -> {
                 panel.dispose();
