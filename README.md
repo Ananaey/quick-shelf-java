@@ -20,10 +20,10 @@ Java is already bundled, so you do not need to install anything. The app is not 
 - **Open:** double-click an item, or select it and press Enter.
 - **More:** right-click an item for Open, Show in folder, Move up, Move down and Remove. Delete also removes.
 - **Search:** type in the box at the top. Escape clears it.
-- **Theme:** the half-filled circle switches light and dark. It starts with your Windows setting.
+- **Theme:** the half-filled circle switches light and dark, and the app remembers your choice. Until you pick one it follows your Windows setting.
 - **Tray icon:** left-click shows or hides the shelf. Right-click for **Start with Windows** and **Quit**.
 
-Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line.
+Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line. Your theme choice is in `settings.properties` in the same folder (delete that file to go back to following Windows).
 
 ## Run from source
 
@@ -67,4 +67,5 @@ git push origin v0.2.0
 - [x] Day 5: light and dark themes (follows Windows, toggle button in the header) and a search box; keyboard input fixed
 - [x] Day 6: system tray icon (left-click shows or hides the shelf; right-click for "Start with Windows" and "Quit")
 - [x] Day 7: portable Windows app built with `jpackage` and published as a GitHub Release
-- [ ] Later: remember the chosen theme, groups / pinned sections, a real installer (needs WiX), code signing
+- [x] Day 8: remember the chosen theme between runs
+- [ ] Later: groups / pinned sections, a real installer (needs WiX), code signing
