@@ -47,6 +47,30 @@ public class ShelfStorageTest {
         storage.save(List.of(a));
         equal("saving works again after corruption", List.of(a), storage.load());
 
+        // ---- pinned items ----
+        storage.saveEntries(List.of(
+                new ShelfStorage.Entry(a, true), new ShelfStorage.Entry(b, false), new ShelfStorage.Entry(unicode, true)));
+        equal("pinned flags round trip", List.of(
+                new ShelfStorage.Entry(a, true), new ShelfStorage.Entry(b, false), new ShelfStorage.Entry(unicode, true)),
+                storage.loadEntries());
+        equal("load() still returns just the paths, in order", List.of(a, b, unicode), storage.load());
+        check("the file shows pinned lines with the marker",
+                Files.readAllLines(file, StandardCharsets.UTF_8).contains("[pinned] " + a));
+
+        // an older file, written before pinning existed, loads as all unpinned
+        Files.write(file, ("# Quick Shelf - one path per line\n" + a + "\n" + b + "\n").getBytes(StandardCharsets.UTF_8));
+        equal("an older file loads as unpinned",
+                List.of(new ShelfStorage.Entry(a, false), new ShelfStorage.Entry(b, false)), storage.loadEntries());
+
+        // hand-edited: extra spaces after the marker, and a marker with no path
+        Files.write(file, ("[pinned]    " + a + "\n[pinned]\n  [pinned] " + b + "\n").getBytes(StandardCharsets.UTF_8));
+        equal("extra spaces after the marker are fine and a marker without a path is skipped",
+                List.of(new ShelfStorage.Entry(a, true), new ShelfStorage.Entry(b, true)), storage.loadEntries());
+
+        storage.save(List.of(a, b));
+        equal("save(paths) writes everything unpinned",
+                List.of(new ShelfStorage.Entry(a, false), new ShelfStorage.Entry(b, false)), storage.loadEntries());
+
         Path def = ShelfStorage.defaultPath();
         equal("default file name", "shelf.txt", def.getFileName().toString());
         equal("default folder name", "QuickShelf", def.getParent().getFileName().toString());

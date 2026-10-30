@@ -13,10 +13,38 @@ import java.util.List;
 
 /**
  * Saves the shelf as plain text: one path per line, UTF-8, lines starting with # are comments.
- * No libraries needed, and the file is easy to read or fix by hand.
+ * A pinned item has "[pinned] " in front of its path. Older files without any marker load as
+ * unpinned. No libraries needed, and the file is easy to read or fix by hand.
  */
 public final class ShelfStorage {
-    static final String HEADER = "# Quick Shelf - one path per line";
+    static final String HEADER = "# Quick Shelf - one path per line, [pinned] in front for pinned items";
+    static final String PINNED_MARKER = "[pinned]";
+
+    /** One saved line: a path and whether it is pinned. */
+    public static final class Entry {
+        public final Path path;
+        public final boolean pinned;
+
+        public Entry(Path path, boolean pinned) {
+            this.path = path;
+            this.pinned = pinned;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Entry && ((Entry) other).path.equals(path) && ((Entry) other).pinned == pinned;
+        }
+
+        @Override
+        public int hashCode() {
+            return path.hashCode() * 31 + (pinned ? 1 : 0);
+        }
+
+        @Override
+        public String toString() {
+            return (pinned ? PINNED_MARKER + " " : "") + path;
+        }
+    }
 
     private final Path file;
 
@@ -37,12 +65,21 @@ public final class ShelfStorage {
         return file;
     }
 
+    /** Just the paths, in order (pinned markers are read but ignored). */
+    public List<Path> load() {
+        List<Path> paths = new ArrayList<>();
+        for (Entry entry : loadEntries()) {
+            paths.add(entry.path);
+        }
+        return paths;
+    }
+
     /**
-     * Returns the saved paths in order. A missing file gives an empty shelf. A file that cannot be
+     * Returns the saved lines in order. A missing file gives an empty shelf. A file that cannot be
      * read as text is renamed to shelf.txt.bad (so nothing is lost) and the shelf starts empty.
      * Blank lines, comments and lines that are not valid paths are skipped.
      */
-    public List<Path> load() {
+    public List<Entry> loadEntries() {
         List<String> lines;
         try {
             lines = Files.readAllLines(file, StandardCharsets.UTF_8);
@@ -54,29 +91,45 @@ public final class ShelfStorage {
         } catch (IOException e) {
             return new ArrayList<>();
         }
-        List<Path> paths = new ArrayList<>();
+        List<Entry> entries = new ArrayList<>();
         for (String line : lines) {
             String text = line.strip();
             if (text.isEmpty() || text.startsWith("#")) {
                 continue;
             }
+            boolean pinned = text.startsWith(PINNED_MARKER);
+            if (pinned) {
+                text = text.substring(PINNED_MARKER.length()).strip();
+            }
+            if (text.isEmpty()) {
+                continue; // a marker with no path: an empty path would mean the current folder
+            }
             try {
-                paths.add(Path.of(text));
+                entries.add(new Entry(Path.of(text), pinned));
             } catch (InvalidPathException e) {
                 // skip a damaged line, keep the rest
             }
         }
-        return paths;
+        return entries;
+    }
+
+    /** Saves paths, none of them pinned. */
+    public void save(List<Path> paths) throws IOException {
+        List<Entry> entries = new ArrayList<>();
+        for (Path path : paths) {
+            entries.add(new Entry(path, false));
+        }
+        saveEntries(entries);
     }
 
     /** Writes a temp file first and then replaces, so a crash cannot leave a half-written shelf. */
-    public void save(List<Path> paths) throws IOException {
+    public void saveEntries(List<Entry> entries) throws IOException {
         Path folder = file.toAbsolutePath().getParent();
         Files.createDirectories(folder);
         List<String> lines = new ArrayList<>();
         lines.add(HEADER);
-        for (Path path : paths) {
-            lines.add(path.toString());
+        for (Entry entry : entries) {
+            lines.add(entry.toString());
         }
         Path temp = file.resolveSibling(file.getFileName() + ".tmp");
         Files.write(temp, lines, StandardCharsets.UTF_8);
