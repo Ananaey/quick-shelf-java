@@ -169,6 +169,61 @@ public class ShelfViewTest {
         s.setTheme(Theme.DARK);
         equal("switching theme keeps the items", 3, s.items().size());
 
+        // ---- pinning ----  (shelf is now: budget, report-final, extra)
+        Path store3 = dir.resolve("pin-store").resolve("shelf.txt");
+        ShelfView p = new ShelfView(store3);
+        File one = Files.createFile(dir.resolve("one.txt")).toFile();
+        File two = Files.createFile(dir.resolve("two.txt")).toFile();
+        File three = Files.createFile(dir.resolve("three.txt")).toFile();
+        File four = Files.createFile(dir.resolve("four.txt")).toFile();
+        p.addFiles(Arrays.asList(one, two, three, four));
+        equal("nothing is pinned at first", List.of("one.txt", "two.txt", "three.txt", "four.txt"), names(p));
+        check("row 2 is not pinned", !p.isPinnedAt(2));
+
+        check("pinning works", p.togglePinAt(2));
+        equal("a pinned item goes to the top", List.of("three.txt", "one.txt", "two.txt", "four.txt"), names(p));
+        check("it is pinned", p.isPinnedAt(0));
+        check("the others are not", !p.isPinnedAt(1) && !p.isPinnedAt(3));
+
+        check("pin a second one", p.togglePinAt(3));
+        equal("the second pin goes after the first",
+                List.of("three.txt", "four.txt", "one.txt", "two.txt"), names(p));
+
+        equal("a pinned item cannot move down past the pinned group", 1, p.moveItem(1, 1));
+        equal("a pinned item can move up inside its group", 0, p.moveItem(1, -1));
+        equal("the order after moving", List.of("four.txt", "three.txt", "one.txt", "two.txt"), names(p));
+        equal("an unpinned item cannot move up into the pinned group", 2, p.moveItem(2, -1));
+        equal("an unpinned item can move down inside its group", 3, p.moveItem(2, 1));
+        equal("the order after that", List.of("four.txt", "three.txt", "two.txt", "one.txt"), names(p));
+
+        equal("pins are saved: a restart keeps the pinned items first and in order",
+                List.of("four.txt", "three.txt", "two.txt", "one.txt"), names(new ShelfView(store3)));
+        ShelfView reloaded = new ShelfView(store3);
+        check("and still pinned after a restart", reloaded.isPinnedAt(0) && reloaded.isPinnedAt(1) && !reloaded.isPinnedAt(2));
+
+        check("unpin the first pinned item", p.togglePinAt(0));
+        equal("an unpinned item goes to the top of the unpinned group",
+                List.of("three.txt", "four.txt", "two.txt", "one.txt"), names(p));
+        check("and is no longer pinned", !p.isPinnedAt(1) && p.isPinnedAt(0));
+
+        // pinning from a search result acts on the item that is displayed
+        p.setQuery("one");
+        equal("search shows one row", List.of("one.txt"), names(p.visibleItems()));
+        check("pin the displayed row", p.togglePinAt(0));
+        p.setQuery("");
+        equal("the searched item was the one pinned", List.of("three.txt", "one.txt", "four.txt", "two.txt"), names(p));
+        check("pin on a bad row is false", !p.togglePinAt(9) && !p.togglePinAt(-1) && !p.isPinnedAt(9));
+
+        // a hand-edited file with a pinned item listed late is tidied on load
+        Path store4 = dir.resolve("hand-edited").resolve("shelf.txt");
+        Files.createDirectories(store4.getParent());
+        Files.write(store4, ("# edited\n" + one + "\n[pinned] " + two + "\n" + three + "\n")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        ShelfView tidy = new ShelfView(store4);
+        equal("pinned items come first after loading", List.of("two.txt", "one.txt", "three.txt"), names(tidy));
+        equal("an item removed while pinned is gone", true, tidy.removeAt(0));
+        equal("the rest is intact", List.of("one.txt", "three.txt"), names(tidy));
+
         TestRunner.finish();
     }
 }

@@ -2,6 +2,9 @@ package quickshelf;
 
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
@@ -187,7 +190,8 @@ public class ShelfView extends JScrollPane {
         if (isSearching() || index < 0 || index >= model.size()) {
             return index;
         }
-        int target = Reorder.target(model.size(), index, delta);
+        // A pinned item stays among the pinned ones, an unpinned item among the unpinned ones.
+        int target = Pinning.target(items(), index, delta);
         if (target == index) {
             return index;
         }
@@ -197,6 +201,26 @@ public class ShelfView extends JScrollPane {
         list.setSelectedIndex(target);
         persist();
         return target;
+    }
+
+    /**
+     * Pins the item at a displayed row (moving it to the end of the pinned items at the top), or
+     * unpins it if it was pinned (moving it to the top of the unpinned items).
+     */
+    boolean togglePinAt(int index) {
+        if (index < 0 || index >= shown.size()) {
+            return false;
+        }
+        ShelfItem item = shown.get(index);
+        setModelItems(Pinning.toggled(items(), item));
+        list.setSelectedValue(item, true);
+        persist();
+        return true;
+    }
+
+    /** True if the item at a displayed row is pinned. */
+    boolean isPinnedAt(int index) {
+        return index >= 0 && index < shown.size() && shown.get(index).isPinned();
     }
 
     boolean isSearching() {
@@ -211,22 +235,31 @@ public class ShelfView extends JScrollPane {
 
     /** Restores the saved shelf. Files that have since gone missing stay listed, dimmed. */
     private void loadSaved() {
-        for (Path path : storage.load()) {
-            ShelfItem item = new ShelfItem(path);
-            if (!model.contains(item)) {
-                model.addElement(item);
+        List<ShelfItem> loaded = new ArrayList<>();
+        for (ShelfStorage.Entry entry : storage.loadEntries()) {
+            ShelfItem item = new ShelfItem(entry.path, entry.pinned);
+            if (!loaded.contains(item)) {
+                loaded.add(item);
             }
         }
+        // A hand-edited file may list a pinned item after unpinned ones: pinned items go first.
+        setModelItems(Pinning.normalized(loaded));
+    }
+
+    /** Replaces everything on the shelf with the given items, in that order. */
+    private void setModelItems(List<ShelfItem> newItems) {
+        model.clear();
+        newItems.forEach(model::addElement);
         refresh();
     }
 
     private void persist() {
-        List<Path> paths = new ArrayList<>();
+        List<ShelfStorage.Entry> entries = new ArrayList<>();
         for (ShelfItem item : items()) {
-            paths.add(item.getPath());
+            entries.add(new ShelfStorage.Entry(item.getPath(), item.isPinned()));
         }
         try {
-            storage.save(paths);
+            storage.saveEntries(entries);
         } catch (IOException e) {
             // A failed save must never break the shelf; the items are still in memory.
             System.err.println("Quick Shelf: could not save the shelf: " + e.getMessage());
@@ -271,8 +304,12 @@ public class ShelfView extends JScrollPane {
         menu.add(menuItem("Open", true, () -> openAt(index)));
         menu.add(menuItem("Show in folder", true, () -> showInFolderAt(index)));
         menu.addSeparator();
-        menu.add(menuItem("Move up", canMove && index > 0, () -> moveItem(index, -1)));
-        menu.add(menuItem("Move down", canMove && index < shown.size() - 1, () -> moveItem(index, 1)));
+        menu.add(menuItem(isPinnedAt(index) ? "Unpin" : "Pin to top", true, () -> togglePinAt(index)));
+        // Moving stays inside the item's group, so the first and last rows of each group cannot move further.
+        boolean canMoveUp = canMove && Pinning.target(items(), index, -1) != index;
+        boolean canMoveDown = canMove && Pinning.target(items(), index, 1) != index;
+        menu.add(menuItem("Move up", canMoveUp, () -> moveItem(index, -1)));
+        menu.add(menuItem("Move down", canMoveDown, () -> moveItem(index, 1)));
         menu.addSeparator();
         menu.add(menuItem("Remove from shelf", true, () -> removeAt(index)));
         menu.show(list, e.getX(), e.getY());
@@ -326,12 +363,31 @@ public class ShelfView extends JScrollPane {
     /** Shows the Windows icon and the name in the current theme; missing files are dimmed. */
     private class ItemRenderer extends DefaultListCellRenderer {
         private static final long serialVersionUID = 1L;
+        private static final int DOT = 8;
+
+        private boolean pinned;
+        private boolean selectedRow;
+
+        /** Paints a small dot at the right edge of pinned rows. */
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            if (pinned) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(selectedRow ? Color.WHITE : theme.selected);
+                g2.fillOval(getWidth() - DOT - 10, (getHeight() - DOT) / 2, DOT, DOT);
+                g2.dispose();
+            }
+        }
 
         @Override
         public Component getListCellRendererComponent(
                 JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
             super.getListCellRendererComponent(list, value, index, isSelected, false);
             ShelfItem item = (ShelfItem) value;
+            pinned = item.isPinned();
+            selectedRow = isSelected;
             setText(item.getName());
             setIcon(FileSystemView.getFileSystemView().getSystemIcon(item.getPath().toFile()));
             setIconTextGap(10);
