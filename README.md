@@ -18,12 +18,13 @@ Java is already bundled, so you do not need to install anything. The app is not 
 
 - **Add:** drag files or folders from Explorer onto the open shelf.
 - **Open:** double-click an item, or select it and press Enter.
-- **More:** right-click an item for Open, Show in folder, Move up, Move down and Remove. Delete also removes.
+- **More:** right-click an item for Open, Show in folder, Pin to top, Move up, Move down and Remove. Delete also removes.
+- **Pin:** pinned items stay at the top of the shelf, marked with a blue dot. Move up and Move down work inside the pinned group and inside the rest, so a pinned item never drifts down.
 - **Search:** type in the box at the top. Escape clears it.
 - **Theme:** the half-filled circle switches light and dark, and the app remembers your choice. Until you pick one it follows your Windows setting.
 - **Tray icon:** left-click shows or hides the shelf. Right-click for **Start with Windows** and **Quit**.
 
-Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line. Your theme choice is in `settings.properties` in the same folder (delete that file to go back to following Windows).
+Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line, with `[pinned]` in front of pinned ones. Your theme choice is in `settings.properties` in the same folder (delete that file to go back to following Windows).
 
 ## Run from source
 
@@ -68,4 +69,5 @@ git push origin v0.2.0
 - [x] Day 6: system tray icon (left-click shows or hides the shelf; right-click for "Start with Windows" and "Quit")
 - [x] Day 7: portable Windows app built with `jpackage` and published as a GitHub Release
 - [x] Day 8: remember the chosen theme between runs
-- [ ] Later: groups / pinned sections, a real installer (needs WiX), code signing
+- [x] Day 9: pinned items
+- [ ] Later: named groups, a real installer (needs WiX), code signing
