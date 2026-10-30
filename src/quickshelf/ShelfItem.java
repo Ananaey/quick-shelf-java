@@ -8,16 +8,35 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** One file or folder on the shelf. Plain Java, no Swing. */
+/**
+ * One file or folder on the shelf. Plain Java, no Swing.
+ * Two items are the same item if they have the same path; whether one is pinned does not matter.
+ */
 public final class ShelfItem {
     private final Path path;
+    private final boolean pinned;
 
     public ShelfItem(Path path) {
+        this(path, false);
+    }
+
+    public ShelfItem(Path path, boolean pinned) {
         this.path = path.toAbsolutePath().normalize();
+        this.pinned = pinned;
     }
 
     public Path getPath() {
         return path;
+    }
+
+    /** Pinned items are kept at the top of the shelf. */
+    public boolean isPinned() {
+        return pinned;
+    }
+
+    /** The same item, pinned or not. Returns this when nothing changes. */
+    public ShelfItem withPinned(boolean value) {
+        return value == pinned ? this : new ShelfItem(path, value);
     }
 
     /** Display name. Drive roots like C:\ have no file name, so the full path is used. */
@@ -56,7 +75,7 @@ public final class ShelfItem {
     }
 
     /**
-     * Turns dropped paths into new items. Skips null paths, paths that do not exist,
+     * Turns dropped paths into new (unpinned) items. Skips null paths, paths that do not exist,
      * repeats within the drop, and anything already on the shelf. Keeps drop order.
      */
     public static List<ShelfItem> newItems(Collection<Path> dropped, Collection<ShelfItem> existing) {
