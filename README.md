@@ -41,7 +41,7 @@ Needs JDK 17 or newer.
 .\test.bat
 ```
 
-The window and tray smoke tests briefly open real windows and put an icon in the tray. They skip themselves on machines with no display.
+The suite runs twice: once normally (the window and tray smoke tests briefly open real windows and put an icon in the tray), then again with no display, which is how GitHub Actions runs it. The smoke tests skip themselves when there is no display.
 
 ## Build the portable app
 
