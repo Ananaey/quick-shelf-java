@@ -4,8 +4,12 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.HeadlessException;
 import java.awt.RenderingHints;
+import java.awt.Toolkit;
 import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.Transferable;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -17,10 +21,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
+import javax.swing.JComponent;
 import javax.swing.JList;
 import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
@@ -59,7 +65,11 @@ public class ShelfView extends JScrollPane {
             return item.exists() ? item.getPath().toString() : item.getPath() + "  (not found)";
         }
     };
+    /** Dragging an item out only ever copies it, so a drop can never move a file out of its folder. */
+    static final int DRAG_ACTIONS = TransferHandler.COPY;
+
     private transient PathOpener opener = new PathOpener();
+    private transient Consumer<String> clipboard = ShelfView::copyToSystemClipboard;
     private final transient ShelfStorage storage;
     private transient Theme theme = Theme.DARK;
     private String query = "";
@@ -84,6 +94,7 @@ public class ShelfView extends JScrollPane {
         // Accept drops anywhere in the view, not just on rows (the list may be short or empty).
         TransferHandler handler = new FileDropHandler();
         list.setTransferHandler(handler);
+        list.setDragEnabled(true); // drag an item out to Explorer, a mail, a chat...
         setTransferHandler(handler);
         getViewport().setTransferHandler(handler);
 
@@ -166,6 +177,42 @@ public class ShelfView extends JScrollPane {
 
     boolean showInFolderAt(int index) {
         return index >= 0 && index < shown.size() && opener.openParent(shown.get(index).getPath());
+    }
+
+    /** Puts the full path of the item at a displayed row on the clipboard. */
+    boolean copyPathAt(int index) {
+        if (index < 0 || index >= shown.size()) {
+            return false;
+        }
+        clipboard.accept(shown.get(index).getPath().toString());
+        return true;
+    }
+
+    /**
+     * What to hand to another program when the item at a displayed row is dragged out. Null (which
+     * cancels the drag) for a bad row or a file that no longer exists.
+     */
+    Transferable exportItemAt(int index) {
+        if (index < 0 || index >= shown.size() || !shown.get(index).exists()) {
+            return null;
+        }
+        return new FileTransferable(shown.get(index).getPath().toFile());
+    }
+
+    boolean isDragEnabled() {
+        return list.getDragEnabled();
+    }
+
+    void setClipboard(Consumer<String> clipboard) {
+        this.clipboard = clipboard;
+    }
+
+    private static void copyToSystemClipboard(String text) {
+        try {
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
+        } catch (HeadlessException | IllegalStateException e) {
+            // No clipboard available (no display, or another program is holding it): nothing to do.
+        }
     }
 
     /** Removes the item at a displayed row and keeps a sensible row selected. */
@@ -303,6 +350,7 @@ public class ShelfView extends JScrollPane {
         JPopupMenu menu = new JPopupMenu();
         menu.add(menuItem("Open", true, () -> openAt(index)));
         menu.add(menuItem("Show in folder", true, () -> showInFolderAt(index)));
+        menu.add(menuItem("Copy path", true, () -> copyPathAt(index)));
         menu.addSeparator();
         menu.add(menuItem(isPinnedAt(index) ? "Unpin" : "Pin to top", true, () -> togglePinAt(index)));
         // Moving stays inside the item's group, so the first and last rows of each group cannot move further.
@@ -336,6 +384,16 @@ public class ShelfView extends JScrollPane {
 
     private class FileDropHandler extends TransferHandler {
         private static final long serialVersionUID = 1L;
+
+        @Override
+        public int getSourceActions(JComponent component) {
+            return DRAG_ACTIONS;
+        }
+
+        @Override
+        protected Transferable createTransferable(JComponent component) {
+            return exportItemAt(list.getSelectedIndex());
+        }
 
         @Override
         public boolean canImport(TransferSupport support) {

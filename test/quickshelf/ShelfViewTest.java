@@ -23,7 +23,7 @@ public class ShelfViewTest {
         return result;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
         Path dir = Files.createTempDirectory("shelf-view-test");
         File a = Files.createFile(dir.resolve("alpha.txt")).toFile();
         File b = Files.createFile(dir.resolve("beta.txt")).toFile();
@@ -223,6 +223,45 @@ public class ShelfViewTest {
         equal("pinned items come first after loading", List.of("two.txt", "one.txt", "three.txt"), names(tidy));
         equal("an item removed while pinned is gone", true, tidy.removeAt(0));
         equal("the rest is intact", List.of("one.txt", "three.txt"), names(tidy));
+
+        // ---- dragging out and copying the path ----
+        ShelfView out = new ShelfView(dir.resolve("drag-store").resolve("shelf.txt"));
+        File keep = Files.createFile(dir.resolve("keep.txt")).toFile();
+        File vanish = Files.createFile(dir.resolve("vanish.txt")).toFile();
+        out.addFiles(Arrays.asList(keep, vanish));
+
+        check("dragging out is switched on", out.isDragEnabled());
+        equal("dragging out only copies, it can never move a file", java.awt.dnd.DnDConstants.ACTION_COPY, ShelfView.DRAG_ACTIONS);
+
+        java.awt.datatransfer.Transferable data = out.exportItemAt(0);
+        check("a normal item can be dragged out", data != null);
+        equal("it is handed over as a file list", true,
+                data.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor));
+        @SuppressWarnings("unchecked")
+        List<File> handedOver = (List<File>) data.getTransferData(java.awt.datatransfer.DataFlavor.javaFileListFlavor);
+        equal("exactly one file is handed over", 1, handedOver.size());
+        equal("and it is the right one", keep.toPath().toAbsolutePath().normalize(), handedOver.get(0).toPath());
+
+        check("a bad row cannot be dragged", out.exportItemAt(9) == null && out.exportItemAt(-1) == null);
+        Files.delete(vanish.toPath());
+        check("a file that no longer exists cannot be dragged", out.exportItemAt(1) == null);
+
+        List<String> copied = new ArrayList<>();
+        out.setClipboard(copied::add);
+        check("copy path works", out.copyPathAt(0));
+        equal("the full path is what gets copied",
+                List.of(keep.toPath().toAbsolutePath().normalize().toString()), copied);
+        check("copy path works for a file that is gone too", out.copyPathAt(1));
+        equal("both were copied, one after the other", 2, copied.size());
+        check("copy path on a bad row does nothing", !out.copyPathAt(9) && !out.copyPathAt(-1));
+        equal("a bad row copied nothing", 2, copied.size());
+
+        out.setQuery("keep");
+        copied.clear();
+        out.copyPathAt(0);
+        check("copy path uses the displayed row while searching",
+                copied.get(0).endsWith("keep.txt"));
+        equal("a search that hides the other row also hides it from dragging", true, out.exportItemAt(1) == null);
 
         TestRunner.finish();
     }
