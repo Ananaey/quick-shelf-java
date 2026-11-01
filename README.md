@@ -18,7 +18,8 @@ Java is already bundled, so you do not need to install anything. The app is not 
 
 - **Add:** drag files or folders from Explorer onto the open shelf.
 - **Open:** double-click an item, or select it and press Enter.
-- **More:** right-click an item for Open, Show in folder, Pin to top, Move up, Move down and Remove. Delete also removes.
+- **Drag out:** drag an item from the shelf into an email, a chat window or an Explorer folder. It is always copied, never moved, so your original file stays where it was.
+- **More:** right-click an item for Open, Show in folder, Copy path, Pin to top, Move up, Move down and Remove. Delete also removes.
 - **Pin:** pinned items stay at the top of the shelf, marked with a blue dot. Move up and Move down work inside the pinned group and inside the rest, so a pinned item never drifts down.
 - **Search:** type in the box at the top. Escape clears it.
 - **Theme:** the half-filled circle switches light and dark, and the app remembers your choice. Until you pick one it follows your Windows setting.
@@ -70,4 +71,5 @@ git push origin v0.2.0
 - [x] Day 7: portable Windows app built with `jpackage` and published as a GitHub Release
 - [x] Day 8: remember the chosen theme between runs
 - [x] Day 9: pinned items
+- [x] Day 10: drag items out of the shelf (copy only) and a Copy path menu item
 - [ ] Later: named groups, a real installer (needs WiX), code signing
