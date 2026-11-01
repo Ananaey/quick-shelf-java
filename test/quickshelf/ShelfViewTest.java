@@ -230,7 +230,8 @@ public class ShelfViewTest {
         File vanish = Files.createFile(dir.resolve("vanish.txt")).toFile();
         out.addFiles(Arrays.asList(keep, vanish));
 
-        check("dragging out is switched on", out.isDragEnabled());
+        equal("dragging out is switched on whenever there is a display",
+                !java.awt.GraphicsEnvironment.isHeadless(), out.isDragEnabled());
         equal("dragging out only copies, it can never move a file", java.awt.dnd.DnDConstants.ACTION_COPY, ShelfView.DRAG_ACTIONS);
 
         java.awt.datatransfer.Transferable data = out.exportItemAt(0);

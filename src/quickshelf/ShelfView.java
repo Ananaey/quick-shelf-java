@@ -4,6 +4,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GraphicsEnvironment;
 import java.awt.HeadlessException;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
@@ -94,7 +95,10 @@ public class ShelfView extends JScrollPane {
         // Accept drops anywhere in the view, not just on rows (the list may be short or empty).
         TransferHandler handler = new FileDropHandler();
         list.setTransferHandler(handler);
-        list.setDragEnabled(true); // drag an item out to Explorer, a mail, a chat...
+        if (!GraphicsEnvironment.isHeadless()) {
+            // Drag an item out to Explorer, a mail, a chat... (Swing refuses this without a display.)
+            list.setDragEnabled(true);
+        }
         setTransferHandler(handler);
         getViewport().setTransferHandler(handler);
 
