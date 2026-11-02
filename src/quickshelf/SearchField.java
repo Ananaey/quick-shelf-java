@@ -17,6 +17,9 @@ public class SearchField extends JTextField {
     private static final String PLACEHOLDER = "Search";
 
     private transient Theme theme = Theme.DARK;
+    private transient Runnable onEnter = () -> { };
+    private transient Runnable onDown = () -> { };
+    private transient Runnable onEscapeWhenEmpty = () -> { };
 
     public SearchField(Consumer<String> onChange) {
         setBorder(BorderFactory.createEmptyBorder(7, 10, 7, 10));
@@ -37,16 +40,43 @@ public class SearchField extends JTextField {
                 onChange.accept(getText());
             }
         });
-        getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "clear");
-        getActionMap().put("clear", new javax.swing.AbstractAction() {
+        bindKey(KeyEvent.VK_ESCAPE, "escape", () -> {
+            if (getText().isEmpty()) {
+                onEscapeWhenEmpty.run(); // nothing left to clear: let the panel close
+            } else {
+                setText("");
+            }
+        });
+        bindKey(KeyEvent.VK_ENTER, "submit", () -> onEnter.run());
+        bindKey(KeyEvent.VK_DOWN, "down", () -> onDown.run());
+        applyTheme(Theme.DARK);
+    }
+
+    /** Called when Enter is pressed in the box. */
+    public void setOnEnter(Runnable action) {
+        this.onEnter = action;
+    }
+
+    /** Called when the Down arrow is pressed in the box. */
+    public void setOnDown(Runnable action) {
+        this.onDown = action;
+    }
+
+    /** Called when Escape is pressed and the box is already empty. */
+    public void setOnEscapeWhenEmpty(Runnable action) {
+        this.onEscapeWhenEmpty = action;
+    }
+
+    private void bindKey(int keyCode, String name, Runnable action) {
+        getInputMap().put(KeyStroke.getKeyStroke(keyCode, 0), name);
+        getActionMap().put(name, new javax.swing.AbstractAction() {
             private static final long serialVersionUID = 1L;
 
             @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                setText("");
+                action.run();
             }
         });
-        applyTheme(Theme.DARK);
     }
 
     public void applyTheme(Theme newTheme) {

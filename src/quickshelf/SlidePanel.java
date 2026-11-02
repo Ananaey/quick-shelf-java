@@ -14,6 +14,9 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.Window;
+import java.awt.event.ActionEvent;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Arc2D;
@@ -21,6 +24,7 @@ import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
 import java.io.IOException;
 import java.nio.file.Path;
+import javax.swing.AbstractAction;
 import javax.swing.Box;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -31,6 +35,8 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JWindow;
+import javax.swing.KeyStroke;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
 /**
@@ -110,12 +116,27 @@ public class SlidePanel {
         if (open) {
             panel.setVisible(true);
             panel.toFront();
+            // Ready to type: the search box gets the keyboard as soon as the panel opens.
+            SwingUtilities.invokeLater(search::requestFocusInWindow);
         }
         fromX = panel.getX();
         toX = open ? shownX() : hiddenX();
         startedAt = System.currentTimeMillis();
         durationMs = SlideMath.durationFor(fromX, toX, PANEL_WIDTH, ANIMATION_MS);
         timer.restart();
+    }
+
+    /** Slides the panel away if it is open. */
+    public void close() {
+        if (open) {
+            toggle();
+        }
+    }
+
+    /** Puts the keyboard in the search box with its text selected, ready to be typed over. */
+    void focusSearch() {
+        search.requestFocusInWindow();
+        search.selectAll();
     }
 
     public void setTheme(Theme newTheme) {
@@ -258,6 +279,37 @@ public class SlidePanel {
         content.add(header, BorderLayout.NORTH);
         content.add(shelf, BorderLayout.CENTER);
         panel.setContentPane(content);
+        installKeyboardShortcuts();
+    }
+
+    /**
+     * Keyboard use: Ctrl+F to search, Enter in the box to open the first match, Down to move into
+     * the list, Escape to clear the search and then close the panel.
+     */
+    private void installKeyboardShortcuts() {
+        search.setOnEnter(shelf::openFirstVisible);
+        search.setOnDown(shelf::focusList);
+        search.setOnEscapeWhenEmpty(this::close);
+
+        // These work wherever the keyboard is inside the panel (for example while the list has it).
+        javax.swing.JRootPane root = panel.getRootPane();
+        root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.CTRL_DOWN_MASK), "focus-search");
+        root.getActionMap().put("focus-search", action(this::focusSearch));
+        root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "close-panel");
+        root.getActionMap().put("close-panel", action(this::close));
+    }
+
+    private static AbstractAction action(Runnable body) {
+        return new AbstractAction() {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                body.run();
+            }
+        };
     }
 
     private void buildHandle() {

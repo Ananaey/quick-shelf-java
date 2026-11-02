@@ -183,6 +183,32 @@ public class ShelfView extends JScrollPane {
         return index >= 0 && index < shown.size() && opener.openParent(shown.get(index).getPath());
     }
 
+    /** Opens the first row the search shows, like a launcher. False if the search shows nothing. */
+    boolean openFirstVisible() {
+        return openAt(0);
+    }
+
+    /** Moves the keyboard into the list: selects the first row if none is selected. */
+    boolean focusList() {
+        if (shown.isEmpty()) {
+            return false;
+        }
+        if (list.getSelectedIndex() < 0) {
+            list.setSelectedIndex(0);
+        }
+        list.requestFocusInWindow();
+        return true;
+    }
+
+    int selectedRow() {
+        return list.getSelectedIndex();
+    }
+
+    /** The component that receives key presses while the keyboard is in the list (used by tests). */
+    Component keyTarget() {
+        return list;
+    }
+
     /** Puts the full path of the item at a displayed row on the clipboard. */
     boolean copyPathAt(int index) {
         if (index < 0 || index >= shown.size()) {
