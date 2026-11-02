@@ -21,7 +21,8 @@ Java is already bundled, so you do not need to install anything. The app is not 
 - **Drag out:** drag an item from the shelf into an email, a chat window or an Explorer folder. It is always copied, never moved, so your original file stays where it was.
 - **More:** right-click an item for Open, Show in folder, Copy path, Pin to top, Move up, Move down and Remove. Delete also removes.
 - **Pin:** pinned items stay at the top of the shelf, marked with a blue dot. Move up and Move down work inside the pinned group and inside the rest, so a pinned item never drifts down.
-- **Search:** type in the box at the top. Escape clears it.
+- **Search:** type in the box at the top. The box is ready to type in as soon as the shelf opens.
+- **Keyboard only:** type to search, press **Enter** to open the first match, **Down** to move into the list (then Enter opens, Delete removes), **Ctrl+F** to get back to the search box, and **Escape** to clear the search and then close the shelf.
 - **Theme:** the half-filled circle switches light and dark, and the app remembers your choice. Until you pick one it follows your Windows setting.
 - **Tray icon:** left-click shows or hides the shelf. Right-click for **Start with Windows** and **Quit**.
 
@@ -72,4 +73,5 @@ git push origin v0.2.0
 - [x] Day 8: remember the chosen theme between runs
 - [x] Day 9: pinned items
 - [x] Day 10: drag items out of the shelf (copy only) and a Copy path menu item
+- [x] Day 11: keyboard control (Ctrl+F, Enter to open the first match, Down, Escape), tested with real key events
 - [ ] Later: named groups, a real installer (needs WiX), code signing
