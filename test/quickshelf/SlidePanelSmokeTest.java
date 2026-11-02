@@ -31,6 +31,106 @@ public class SlidePanelSmokeTest {
         }
     }
 
+    /** Sends a real key press to a component, the way the keyboard would. */
+    private static void press(java.awt.Component target, int keyCode, int modifiers) throws Exception {
+        onEdt(() -> {
+            target.dispatchEvent(new java.awt.event.KeyEvent(
+                    target, java.awt.event.KeyEvent.KEY_PRESSED, System.currentTimeMillis(), modifiers, keyCode,
+                    java.awt.event.KeyEvent.CHAR_UNDEFINED));
+            return null;
+        });
+    }
+
+    /** Drives the shelf with key presses only: search, open, move around, delete, escape. */
+    private static void keyboardScenario(Path folder) throws Exception {
+        Path files = Files.createDirectories(folder.resolve("keys"));
+        java.io.File one = Files.createFile(files.resolve("one.txt")).toFile();
+        java.io.File two = Files.createFile(files.resolve("two.txt")).toFile();
+        java.io.File three = Files.createFile(files.resolve("three.txt")).toFile();
+
+        SlidePanel keys = onEdt(() -> new SlidePanel(files.resolve("shelf.txt")));
+        try {
+            java.util.List<java.io.File> launched = new java.util.ArrayList<>();
+            onEdt(() -> {
+                keys.shelf().addFiles(java.util.List.of(one, two, three));
+                keys.shelf().setOpener(new PathOpener(launched::add));
+                keys.toggle();
+                return null;
+            });
+            waitForAnimation(keys);
+            java.awt.Component box = keys.search();
+            java.awt.Component list = keys.shelf().keyTarget();
+            final int none = 0;
+            final int enter = java.awt.event.KeyEvent.VK_ENTER;
+            final int escape = java.awt.event.KeyEvent.VK_ESCAPE;
+            final int down = java.awt.event.KeyEvent.VK_DOWN;
+
+            // Enter in the search box opens the first match
+            onEdt(() -> {
+                keys.search().setText("two");
+                return null;
+            });
+            press(box, enter, none);
+            equal("Enter in the search box opens one file", 1, launched.size());
+            equal("and it is the match", "two.txt", launched.get(0).getName());
+            onEdt(() -> {
+                keys.search().setText("zzz");
+                return null;
+            });
+            press(box, enter, none);
+            equal("Enter with no match opens nothing", 1, launched.size());
+
+            // Down moves from the box into the list
+            onEdt(() -> {
+                keys.search().setText("");
+                return null;
+            });
+            press(box, down, none);
+            equal("Down in the search box selects the first row", 0, (int) onEdt(() -> keys.shelf().selectedRow()));
+
+            // Arrow, Enter and Delete in the list (the keys that used to do nothing)
+            press(list, down, none);
+            equal("Down in the list moves to the next row", 1, (int) onEdt(() -> keys.shelf().selectedRow()));
+            press(list, enter, none);
+            equal("Enter in the list opens the selected item", 2, launched.size());
+            equal("it is the selected row", "two.txt", launched.get(1).getName());
+            press(list, java.awt.event.KeyEvent.VK_DELETE, none);
+            equal("Delete removes the selected item", 2, (int) onEdt(() -> keys.shelf().items().size()));
+            equal("the right one went", "three.txt", onEdt(() -> keys.shelf().items().get(1).getName()));
+
+            // Ctrl+F selects the search text, even with the keyboard in the list
+            onEdt(() -> {
+                keys.search().setText("hello");
+                return null;
+            });
+            press(list, java.awt.event.KeyEvent.VK_F, java.awt.event.InputEvent.CTRL_DOWN_MASK);
+            equal("Ctrl+F selects the text in the search box", "hello", onEdt(() -> keys.search().getSelectedText()));
+
+            // Escape clears first, then closes
+            press(box, escape, none);
+            equal("Escape clears the search", "", onEdt(() -> keys.search().getText()));
+            check("and leaves the panel open", onEdt(keys::isOpen));
+            press(box, escape, none);
+            check("Escape on an empty box closes the panel", !onEdt(keys::isOpen));
+            waitForAnimation(keys);
+
+            onEdt(() -> {
+                keys.toggle();
+                return null;
+            });
+            waitForAnimation(keys);
+            check("reopened", onEdt(keys::isOpen));
+            press(list, escape, none);
+            check("Escape with the keyboard in the list also closes the panel", !onEdt(keys::isOpen));
+            waitForAnimation(keys);
+        } finally {
+            onEdt(() -> {
+                keys.dispose();
+                return null;
+            });
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         if (GraphicsEnvironment.isHeadless()) {
             System.out.println("No display: smoke test skipped");
@@ -105,6 +205,8 @@ public class SlidePanelSmokeTest {
             });
             waitForAnimation(panel);
             equal("double toggle ends closed", onEdt(panel::hiddenX), onEdt(panel::panelX));
+
+            keyboardScenario(store.getParent());
 
             // The theme choice is remembered: click the button, then open a second panel.
             Path settingsFile = store.getParent().resolve("settings.properties");
