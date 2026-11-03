@@ -25,6 +25,7 @@ Java is already bundled, so you do not need to install anything. The app is not 
 - **Keyboard only:** type to search, press **Enter** to open the first match, **Down** to move into the list (then Enter opens, Delete removes), **Ctrl+F** to get back to the search box, and **Escape** to clear the search and then close the shelf.
 - **Theme:** the half-filled circle switches light and dark, and the app remembers your choice. Until you pick one it follows your Windows setting.
 - **Tray icon:** left-click shows or hides the shelf. Right-click for **Start with Windows** and **Quit**.
+- **One copy at a time:** starting Quick Shelf again (for example from the Start menu while it is already in the tray) does not open a second one. The copy that is already running slides the shelf open and the new one exits. It uses a port on this computer only (47831), and if another program owns that port Quick Shelf still runs.
 
 Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line, with `[pinned]` in front of pinned ones. Your theme choice is in `settings.properties` in the same folder (delete that file to go back to following Windows).
 
@@ -74,4 +75,5 @@ git push origin v0.2.0
 - [x] Day 9: pinned items
 - [x] Day 10: drag items out of the shelf (copy only) and a Copy path menu item
 - [x] Day 11: keyboard control (Ctrl+F, Enter to open the first match, Down, Escape), tested with real key events
+- [x] Day 12: only one copy runs at a time; starting it again opens the running one
 - [ ] Later: named groups, a real installer (needs WiX), code signing
