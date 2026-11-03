@@ -206,6 +206,33 @@ public class SlidePanelSmokeTest {
             waitForAnimation(panel);
             equal("double toggle ends closed", onEdt(panel::hiddenX), onEdt(panel::panelX));
 
+            // open() is what a second launch triggers: open if closed, stay open if already open
+            check("closed before open()", !onEdt(panel::isOpen));
+            onEdt(() -> {
+                panel.open();
+                return null;
+            });
+            check("open() opens a closed shelf", onEdt(panel::isOpen));
+            waitForAnimation(panel);
+            onEdt(() -> {
+                panel.open();
+                return null;
+            });
+            check("open() on an open shelf keeps it open", onEdt(panel::isOpen));
+            waitForAnimation(panel);
+            equal("and it stays fully in view", onEdt(panel::shownX), onEdt(panel::panelX));
+            onEdt(() -> {
+                panel.close();
+                return null;
+            });
+            check("close() closes it", !onEdt(panel::isOpen));
+            onEdt(() -> {
+                panel.close();
+                return null;
+            });
+            check("close() on a closed shelf does nothing", !onEdt(panel::isOpen));
+            waitForAnimation(panel);
+
             keyboardScenario(store.getParent());
 
             // The theme choice is remembered: click the button, then open a second panel.

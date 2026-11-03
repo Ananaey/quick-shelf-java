@@ -126,6 +126,15 @@ public class SlidePanel {
         timer.restart();
     }
 
+    /** Slides the panel open if it is closed; if it is already open, just brings it to the front. */
+    public void open() {
+        if (open) {
+            panel.toFront();
+        } else {
+            toggle();
+        }
+    }
+
     /** Slides the panel away if it is open. */
     public void close() {
         if (open) {
