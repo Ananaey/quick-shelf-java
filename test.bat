@@ -3,7 +3,7 @@ rem Compile and run all tests twice: once normally (the smoke tests briefly open
 rem and put an icon in the tray), then again with no display, which is how GitHub Actions runs
 rem them. Some Swing calls only fail without a display, so the second pass catches those here.
 setlocal
-set TESTS=SlideMathTest ReorderTest PathOpenerTest ThemeTest ShelfFilterTest ShelfItemTest ShelfStorageTest SettingsTest AutostartTest TrayImageTest IconMakerTest PinningTest FileTransferableTest SingleInstanceTest ShelfViewTest SlidePanelSmokeTest TraySmokeTest
+set TESTS=SlideMathTest ReorderTest PathOpenerTest ThemeTest ShelfFilterTest ShelfItemTest ShelfStorageTest SettingsTest AutostartTest TrayImageTest IconMakerTest PinningTest FileTransferableTest SingleInstanceTest PanelLayoutTest ShelfViewTest SlidePanelSmokeTest TraySmokeTest
 
 if exist out rmdir /s /q out
 mkdir out
