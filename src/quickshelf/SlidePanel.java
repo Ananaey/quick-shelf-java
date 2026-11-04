@@ -24,6 +24,7 @@ import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.function.Supplier;
 import javax.swing.AbstractAction;
 import javax.swing.Box;
 import javax.swing.BorderFactory;
@@ -48,19 +49,24 @@ import javax.swing.Timer;
  */
 public class SlidePanel {
     static final int PANEL_WIDTH = 320;
-    static final int PANEL_HEIGHT = 520;
     static final int HANDLE_WIDTH = 14;
     static final int HANDLE_HEIGHT = 80;
-    static final int TOP_MARGIN = 60;
     static final int ANIMATION_MS = 220;
     private static final int FRAME_MS = 15;
+    /** How often to check that the screen is still the size the shelf was laid out for. */
+    private static final int SCREEN_CHECK_MS = 2000;
 
     private final JFrame panel = new JFrame("Quick Shelf");
     private final JWindow handle = new JWindow();
     private final ShelfView shelf;
     private final Settings settings;
-    private final Rectangle screen;
+    private final Supplier<Rectangle> screenSource;
     private final Timer timer;
+    private final Timer screenWatcher;
+
+    private Rectangle screen;
+    private int panelTop;
+    private int panelHeight;
 
     private final JPanel content = new JPanel(new BorderLayout(0, 8));
     private final JPanel header = new JPanel();
@@ -93,13 +99,20 @@ public class SlidePanel {
     }
 
     public SlidePanel(Path storageFile, Theme initialTheme, Settings settings) {
+        this(storageFile, initialTheme, settings, SlidePanel::usableScreen);
+    }
+
+    /** Takes the screen area from the given source, so tests can pretend the screen changes. */
+    SlidePanel(Path storageFile, Theme initialTheme, Settings settings, Supplier<Rectangle> screenSource) {
         this.settings = settings;
+        this.screenSource = screenSource;
         this.shelf = new ShelfView(storageFile);
         this.search = new SearchField(shelf::setQuery);
-        this.screen = usableScreen();
+        applyScreen(screenSource.get());
         buildPanel();
         buildHandle();
         this.timer = new Timer(FRAME_MS, event -> tick());
+        this.screenWatcher = new Timer(SCREEN_CHECK_MS, event -> refreshScreen());
         setTheme(initialTheme);
         placeAt(hiddenX());
     }
@@ -109,9 +122,11 @@ public class SlidePanel {
     /** Shows the handle (the panel itself stays hidden until toggled). */
     public void show() {
         handle.setVisible(true);
+        screenWatcher.start();
     }
 
     public void toggle() {
+        refreshScreen(); // the screen may have changed since the last time
         open = !open;
         if (open) {
             panel.setVisible(true);
@@ -176,8 +191,42 @@ public class SlidePanel {
 
     public void dispose() {
         timer.stop();
+        screenWatcher.stop();
         panel.dispose();
         handle.dispose();
+    }
+
+    /**
+     * Re-reads the usable screen (it changes when a laptop is docked, the resolution or scaling
+     * changes, or the taskbar moves) and, if it differs, lays the shelf out for the new one.
+     * Returns true if anything changed.
+     */
+    boolean refreshScreen() {
+        Rectangle now = screenSource.get();
+        if (now.equals(screen)) {
+            return false;
+        }
+        applyScreen(now);
+        panel.setShape(panelShape());
+        if (timer.isRunning()) {
+            toX = open ? shownX() : hiddenX(); // a slide in progress now ends at the new place
+        } else {
+            placeAt(open ? shownX() : hiddenX());
+        }
+        return true;
+    }
+
+    /** Remembers the screen and works out how tall the panel should be on it. */
+    private void applyScreen(Rectangle area) {
+        this.screen = area;
+        PanelLayout.Vertical layout = PanelLayout.vertical(area.height);
+        this.panelTop = area.y + layout.top;
+        this.panelHeight = layout.height;
+    }
+
+    private RoundRectangle2D panelShape() {
+        // The shape is wider than the window, so only the left corners are rounded.
+        return new RoundRectangle2D.Double(0, 0, PANEL_WIDTH + 40, panelHeight, 32, 32);
     }
 
     // ---- state, visible to tests ------------------------------------------------
@@ -192,6 +241,22 @@ public class SlidePanel {
 
     int panelX() {
         return panel.getX();
+    }
+
+    int panelY() {
+        return panel.getY();
+    }
+
+    int panelHeight() {
+        return panel.getHeight();
+    }
+
+    int handleX() {
+        return handle.getX();
+    }
+
+    int handleY() {
+        return handle.getY();
     }
 
     boolean isPanelVisible() {
@@ -238,9 +303,8 @@ public class SlidePanel {
     }
 
     private void placeAt(int panelX) {
-        int y = screen.y + TOP_MARGIN;
-        panel.setBounds(panelX, y, PANEL_WIDTH, PANEL_HEIGHT);
-        handle.setBounds(panelX - HANDLE_WIDTH, y, HANDLE_WIDTH, HANDLE_HEIGHT);
+        panel.setBounds(panelX, panelTop, PANEL_WIDTH, panelHeight);
+        handle.setBounds(panelX - HANDLE_WIDTH, panelTop, HANDLE_WIDTH, HANDLE_HEIGHT);
     }
 
     // ---- window construction ----------------------------------------------------
@@ -249,9 +313,8 @@ public class SlidePanel {
         panel.setUndecorated(true);
         panel.setType(Window.Type.UTILITY); // no taskbar button
         panel.setAlwaysOnTop(true);
-        panel.setSize(PANEL_WIDTH, PANEL_HEIGHT);
-        // The shape is wider than the window, so only the left corners are rounded.
-        panel.setShape(new RoundRectangle2D.Double(0, 0, PANEL_WIDTH + 40, PANEL_HEIGHT, 32, 32));
+        panel.setSize(PANEL_WIDTH, panelHeight);
+        panel.setShape(panelShape());
 
         content.setBorder(BorderFactory.createEmptyBorder(22, 22, 22, 22));
 

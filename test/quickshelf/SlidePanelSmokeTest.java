@@ -41,6 +41,80 @@ public class SlidePanelSmokeTest {
         });
     }
 
+    /** Pretends the screen changes (docking, resolution, taskbar) and checks the shelf follows. */
+    private static void screenScenario(Path folder) throws Exception {
+        java.util.concurrent.atomic.AtomicReference<java.awt.Rectangle> area =
+                new java.util.concurrent.atomic.AtomicReference<>(new java.awt.Rectangle(0, 0, 1920, 1040));
+        SlidePanel p = onEdt(() -> new SlidePanel(folder.resolve("screen.txt"), Theme.DARK, Settings.inMemory(), area::get));
+        try {
+            onEdt(() -> {
+                p.show();
+                return null;
+            });
+            equal("big screen: parked off the right edge", 1920, (int) onEdt(p::panelX));
+            equal("big screen: preferred height", 520, (int) onEdt(p::panelHeight));
+            equal("big screen: 60 px from the top", 60, (int) onEdt(p::panelY));
+            equal("big screen: the handle sits on the edge", 1920 - SlidePanel.HANDLE_WIDTH, (int) onEdt(p::handleX));
+            check("nothing changed yet", !onEdt(p::refreshScreen));
+
+            // closed, then the screen gets smaller
+            area.set(new java.awt.Rectangle(0, 0, 1280, 600));
+            check("a new screen size is noticed", onEdt(p::refreshScreen));
+            equal("the shelf is parked at the new edge", 1280, (int) onEdt(p::panelX));
+            equal("and so is the handle", 1280 - SlidePanel.HANDLE_WIDTH, (int) onEdt(p::handleX));
+            equal("600 px high still fits the full height", 520, (int) onEdt(p::panelHeight));
+            check("the same size again is not a change", !onEdt(p::refreshScreen));
+
+            area.set(new java.awt.Rectangle(0, 0, 1280, 400));
+            onEdt(p::refreshScreen);
+            equal("a 400 px screen shrinks the panel", 324, (int) onEdt(p::panelHeight));
+            equal("the gap above stays", 60, (int) onEdt(p::panelY));
+            equal("the handle moves with it", 60, (int) onEdt(p::handleY));
+
+            area.set(new java.awt.Rectangle(0, 0, 1280, 300));
+            onEdt(p::refreshScreen);
+            equal("a 300 px screen uses the minimum height", 260, (int) onEdt(p::panelHeight));
+            equal("and a smaller gap", 40, (int) onEdt(p::panelY));
+
+            // opening picks up a change that nobody told it about, on an offset screen
+            area.set(new java.awt.Rectangle(100, 50, 1366, 728));
+            onEdt(() -> {
+                p.toggle();
+                return null;
+            });
+            waitForAnimation(p);
+            equal("opening noticed the new screen and slid to its edge", 100 + 1366 - SlidePanel.PANEL_WIDTH,
+                    (int) onEdt(p::panelX));
+            equal("offset screen: top is relative to that screen", 50 + 60, (int) onEdt(p::panelY));
+            equal("offset screen: full height", 520, (int) onEdt(p::panelHeight));
+
+            // the screen changes while the shelf is open (taskbar moved, display changed)
+            area.set(new java.awt.Rectangle(0, 0, 1024, 500));
+            check("a change while open is noticed", onEdt(p::refreshScreen));
+            check("the shelf stays open", onEdt(p::isOpen));
+            equal("and moves to the new edge", 1024 - SlidePanel.PANEL_WIDTH, (int) onEdt(p::panelX));
+            equal("and resizes", 424, (int) onEdt(p::panelHeight));
+            equal("and the handle follows", 1024 - SlidePanel.PANEL_WIDTH - SlidePanel.HANDLE_WIDTH, (int) onEdt(p::handleX));
+
+            // the screen changes in the middle of a slide
+            onEdt(() -> {
+                p.toggle(); // starts closing
+                return null;
+            });
+            area.set(new java.awt.Rectangle(0, 0, 800, 600));
+            onEdt(p::refreshScreen);
+            waitForAnimation(p);
+            check("closed", !onEdt(p::isOpen));
+            equal("a slide in progress ends at the new edge", 800, (int) onEdt(p::panelX));
+            equal("and the handle is there too", 800 - SlidePanel.HANDLE_WIDTH, (int) onEdt(p::handleX));
+        } finally {
+            onEdt(() -> {
+                p.dispose();
+                return null;
+            });
+        }
+    }
+
     /** Drives the shelf with key presses only: search, open, move around, delete, escape. */
     private static void keyboardScenario(Path folder) throws Exception {
         Path files = Files.createDirectories(folder.resolve("keys"));
@@ -234,6 +308,7 @@ public class SlidePanelSmokeTest {
             waitForAnimation(panel);
 
             keyboardScenario(store.getParent());
+            screenScenario(store.getParent());
 
             // The theme choice is remembered: click the button, then open a second panel.
             Path settingsFile = store.getParent().resolve("settings.properties");
