@@ -1,7 +1,10 @@
 package quickshelf;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Ordering rules for pinned items: pinned items always come first, each group keeps its own
@@ -50,6 +53,49 @@ public final class Pinning {
         ShelfItem current = rest.remove(index);
         rest.add(pinnedCount(rest), current.withPinned(!current.isPinned()));
         return rest;
+    }
+
+    /**
+     * What a "pin / unpin" on several items should do: pin them if at least one is not pinned yet,
+     * otherwise unpin them. Nothing selected means nothing to pin.
+     */
+    public static boolean shouldPin(List<ShelfItem> items, Collection<ShelfItem> targets) {
+        Set<ShelfItem> wanted = new HashSet<>(targets);
+        for (ShelfItem item : items) {
+            if (wanted.contains(item) && !item.isPinned()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A copy with the target items pinned (or unpinned). Items that were not in the other state
+     * move: newly pinned ones go to the end of the pinned group, newly unpinned ones to the top
+     * of the unpinned group, each keeping the order they had. Targets that were already in the
+     * wanted state, and everything else, stay where they are.
+     */
+    public static List<ShelfItem> withPinned(List<ShelfItem> items, Collection<ShelfItem> targets, boolean pinned) {
+        Set<ShelfItem> wanted = new HashSet<>(targets);
+        List<ShelfItem> staying = new ArrayList<>();
+        List<ShelfItem> changed = new ArrayList<>();
+        List<ShelfItem> rest = new ArrayList<>();
+        for (ShelfItem item : items) {
+            if (wanted.contains(item) && item.isPinned() != pinned) {
+                changed.add(item.withPinned(pinned));
+            } else if (item.isPinned()) {
+                staying.add(item);
+            } else {
+                rest.add(item);
+            }
+        }
+        // Pinned ones that stay, then the ones that just changed (they are at the boundary
+        // between the groups whichever way they went), then the unpinned ones that stay.
+        List<ShelfItem> result = new ArrayList<>(items.size());
+        result.addAll(staying);
+        result.addAll(changed);
+        result.addAll(rest);
+        return result;
     }
 
     /** First and last index of the group (pinned or unpinned) that the item at index belongs to. */

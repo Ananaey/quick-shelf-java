@@ -65,6 +65,57 @@ public class PinningTest {
         equal("toggling twice is back to unpinned", false,
                 Pinning.toggled(Pinning.toggled(items("abc"), item("b")), item("b")).get(0).isPinned());
 
+        // ---- several at once ----
+        // The shelf always keeps pinned items first, so these lists do too: B and E are pinned.
+        List<ShelfItem> six = items("BEacdf");
+        List<ShelfItem> all = List.of(item("a"), item("b"), item("c"), item("d"), item("e"), item("f"));
+
+        check("pin when one of them is not pinned", Pinning.shouldPin(six, List.of(item("b"), item("c"))));
+        check("pin when none of them is pinned", Pinning.shouldPin(six, List.of(item("c"), item("d"))));
+        check("unpin when all of them are pinned", !Pinning.shouldPin(six, List.of(item("b"), item("e"))));
+        check("a single pinned item means unpin", !Pinning.shouldPin(six, List.of(item("b"))));
+        check("nothing selected means nothing to pin", !Pinning.shouldPin(six, List.of()));
+        check("items not on the list are ignored", !Pinning.shouldPin(six, List.of(item("zz"), item("b"))));
+
+        equal("pinning two goes after the existing pinned ones, in list order", "BECDaf",
+                spec(Pinning.withPinned(six, List.of(item("d"), item("c")), true)));
+        equal("pinning items that are already pinned changes nothing", "BEacdf",
+                spec(Pinning.withPinned(six, List.of(item("b"), item("e")), true)));
+        equal("pinning a mix moves only the ones that were not pinned", "BECDaf",
+                spec(Pinning.withPinned(six, List.of(item("b"), item("c"), item("d")), true)));
+        equal("unpinning two puts them at the top of the unpinned group, in order", "beacdf",
+                spec(Pinning.withPinned(six, List.of(item("e"), item("b")), false)));
+        equal("unpinning one of two keeps the other pinned", "Beacdf",
+                spec(Pinning.withPinned(six, List.of(item("e")), false)));
+        equal("unpinning items that are not pinned changes nothing", "BEacdf",
+                spec(Pinning.withPinned(six, List.of(item("a"), item("f")), false)));
+        equal("no targets changes nothing", "BEacdf", spec(Pinning.withPinned(six, List.of(), true)));
+        equal("targets that are not on the list change nothing", "BEacdf",
+                spec(Pinning.withPinned(six, List.of(item("zz")), true)));
+        equal("pinning everything keeps the pinned ones first and the order after them", "BEACDF",
+                spec(Pinning.withPinned(six, all, true)));
+        equal("unpinning everything keeps the order", "beacdf", spec(Pinning.withPinned(six, all, false)));
+        equal("the original list is not changed", "BEacdf", spec(six));
+        equal("the result always has the same number of items", 6,
+                Pinning.withPinned(six, List.of(item("a"), item("e")), true).size());
+        equal("pinning a and c then unpinning them again gives back the original order", "BEacdf",
+                spec(Pinning.withPinned(Pinning.withPinned(six, List.of(item("a"), item("c")), true),
+                        List.of(item("a"), item("c")), false)));
+
+        // pinned items always end up first, whatever was selected
+        List<ShelfItem> result = Pinning.withPinned(items("abcdef"), List.of(item("f"), item("b")), true);
+        boolean pinnedFirst = true;
+        boolean seenUnpinned = false;
+        for (ShelfItem it : result) {
+            if (!it.isPinned()) {
+                seenUnpinned = true;
+            } else if (seenUnpinned) {
+                pinnedFirst = false;
+            }
+        }
+        check("pinned items are always first", pinnedFirst);
+        equal("pinning f and b from a plain list puts b before f", "BFacde", spec(result));
+
         // ---- groups ----
         List<ShelfItem> mixed = items("ABcde");
         check("pinned group bounds", java.util.Arrays.equals(new int[] {0, 1}, Pinning.groupBounds(mixed, 1)));
