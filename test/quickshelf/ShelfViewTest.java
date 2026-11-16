@@ -13,6 +13,29 @@ import static quickshelf.TestRunner.equal;
 
 /** Uses the real list and drop handler, but never opens a window, so it runs without a display. */
 public class ShelfViewTest {
+    /** The text of each menu entry, with " (off)" after the ones that are greyed out. */
+    private static List<String> menuLabels(javax.swing.JPopupMenu menu) {
+        List<String> labels = new ArrayList<>();
+        for (java.awt.Component part : menu.getComponents()) {
+            if (part instanceof javax.swing.JMenuItem) {
+                javax.swing.JMenuItem entry = (javax.swing.JMenuItem) part;
+                labels.add(entry.getText() + (entry.isEnabled() ? "" : " (off)"));
+            }
+        }
+        return labels;
+    }
+
+    /** Clicks the menu entry with exactly this text. */
+    private static void clickMenuItem(javax.swing.JPopupMenu menu, String text) {
+        for (java.awt.Component part : menu.getComponents()) {
+            if (part instanceof javax.swing.JMenuItem && ((javax.swing.JMenuItem) part).getText().equals(text)) {
+                ((javax.swing.JMenuItem) part).doClick(0);
+                return;
+            }
+        }
+        throw new IllegalStateException("no menu entry called " + text);
+    }
+
     private static List<String> names(ShelfView view) {
         return names(view.items());
     }
@@ -263,6 +286,97 @@ public class ShelfViewTest {
         check("copy path uses the displayed row while searching",
                 copied.get(0).endsWith("keep.txt"));
         equal("a search that hides the other row also hides it from dragging", true, out.exportItemAt(1) == null);
+
+        // ---- tidying up: sort, remove missing, undo ----
+        Path tidyDir = Files.createDirectories(dir.resolve("tidy"));
+        Path tidyStore = dir.resolve("tidy-store").resolve("shelf.txt");
+        File t10 = Files.createFile(tidyDir.resolve("file10.txt")).toFile();
+        File tFolder = Files.createDirectory(tidyDir.resolve("zdir")).toFile();
+        File t2 = Files.createFile(tidyDir.resolve("file2.txt")).toFile();
+        File tA = Files.createFile(tidyDir.resolve("a.txt")).toFile();
+        ShelfView tidy2 = new ShelfView(tidyStore);
+
+        check("a menu on an empty shelf has nothing to sort", menuLabels(tidy2.buildTidyMenu())
+                .equals(List.of("Sort A-Z (off)", "Folders first (off)", "No missing items (off)", "Undo (off)")));
+        tidy2.addFiles(Arrays.asList(t10, tFolder, t2, tA));
+        equal("added in this order", List.of("file10.txt", "zdir", "file2.txt", "a.txt"), names(tidy2));
+        equal("the menu offers sorting once there is something to sort",
+                List.of("Sort A-Z", "Folders first", "No missing items (off)", "Undo (off)"), menuLabels(tidy2.buildTidyMenu()));
+
+        check("sort A-Z changes the order", tidy2.sortByName());
+        equal("numbers count by value and folders are sorted with the rest",
+                List.of("a.txt", "file2.txt", "file10.txt", "zdir"), names(tidy2));
+        equal("the new order was saved", List.of("a.txt", "file2.txt", "file10.txt", "zdir"),
+                names(new ShelfView(tidyStore)));
+        check("undo is now possible", tidy2.canUndoTidy());
+        check("and offered in the menu", menuLabels(tidy2.buildTidyMenu()).contains("Undo"));
+        check("sorting an already sorted shelf changes nothing", !tidy2.sortByName());
+        check("and does not throw away the earlier undo", tidy2.canUndoTidy());
+
+        check("undo puts the old order back", tidy2.undoTidy());
+        equal("the original order is back", List.of("file10.txt", "zdir", "file2.txt", "a.txt"), names(tidy2));
+        equal("and saved", List.of("file10.txt", "zdir", "file2.txt", "a.txt"), names(new ShelfView(tidyStore)));
+        check("undo works once", !tidy2.canUndoTidy() && !tidy2.undoTidy());
+
+        check("folders first", tidy2.sortFoldersFirst());
+        equal("the folder moves up and the files follow A-Z",
+                List.of("zdir", "a.txt", "file2.txt", "file10.txt"), names(tidy2));
+        check("any other change makes the old undo stale", tidy2.canUndoTidy());
+        File tNew = Files.createFile(tidyDir.resolve("new.txt")).toFile();
+        tidy2.addFiles(List.of(tNew));
+        check("adding a file forgets the undo", !tidy2.canUndoTidy());
+        tidy2.sortByName();
+        tidy2.togglePinAt(0); // pin a.txt
+        check("so does pinning", !tidy2.canUndoTidy());
+
+        // pinned items stay on top when sorting
+        tidy2.sortFoldersFirst();
+        equal("pinned a.txt stays on top while the rest is sorted",
+                List.of("a.txt", "zdir", "file2.txt", "file10.txt", "new.txt"), names(tidy2));
+        check("and is still pinned", tidy2.isPinnedAt(0) && !tidy2.isPinnedAt(1));
+
+        // missing items
+        Files.delete(t10.toPath());
+        Files.delete(tNew.toPath());
+        equal("two files are gone", 2, tidy2.missingCount());
+        check("the menu says how many", menuLabels(tidy2.buildTidyMenu()).contains("Remove 2 missing items"));
+        equal("remove takes exactly those", 2, tidy2.removeMissing());
+        equal("the rest is kept in order", List.of("a.txt", "zdir", "file2.txt"), names(tidy2));
+        check("a clean-up can be undone", tidy2.canUndoTidy());
+        check("undo brings the missing items back", tidy2.undoTidy());
+        equal("they are back where they were", List.of("a.txt", "zdir", "file2.txt", "file10.txt", "new.txt"), names(tidy2));
+        equal("removing again takes the same two", 2, tidy2.removeMissing());
+        equal("and now nothing is missing", 0, tidy2.missingCount());
+        equal("so a second clean-up removes nothing", 0, tidy2.removeMissing());
+        check("the menu says there is nothing missing", menuLabels(tidy2.buildTidyMenu()).contains("No missing items (off)"));
+
+        Files.delete(t2.toPath());
+        check("a single missing item is not plural", menuLabels(tidy2.buildTidyMenu()).contains("Remove 1 missing item"));
+
+        // clicking the menu entries runs the actions
+        tidy2.undoTidy(); // brings back file2, file10 and new, which are all missing by now
+        equal("the shelf is back to five items", List.of("a.txt", "zdir", "file2.txt", "file10.txt", "new.txt"), names(tidy2));
+        clickMenuItem(tidy2.buildTidyMenu(), "Sort A-Z");
+        equal("clicking Sort A-Z in the menu sorts the shelf",
+                List.of("a.txt", "file2.txt", "file10.txt", "new.txt", "zdir"), names(tidy2));
+        check("and it can be undone", tidy2.canUndoTidy());
+        clickMenuItem(tidy2.buildTidyMenu(), "Undo");
+        equal("clicking Undo in the menu puts it back",
+                List.of("a.txt", "zdir", "file2.txt", "file10.txt", "new.txt"), names(tidy2));
+        check("and the undo is used up", !tidy2.canUndoTidy());
+
+        // while a search hides rows, none of it applies (three items are missing: file2, file10, new)
+        tidy2.setQuery("a.txt");
+        check("sorting is off while searching", !tidy2.sortByName() && !tidy2.sortFoldersFirst());
+        equal("so is removing missing items", 0, tidy2.removeMissing());
+        equal("the menu says so", List.of("Sort A-Z (off)", "Folders first (off)", "Remove 3 missing items (off)", "Undo (off)"),
+                menuLabels(tidy2.buildTidyMenu()));
+        tidy2.setQuery("");
+
+        // a one-item shelf has nothing to sort
+        ShelfView single = new ShelfView(dir.resolve("single-store").resolve("shelf.txt"));
+        single.addFiles(List.of(tA));
+        check("one item cannot be sorted", menuLabels(single.buildTidyMenu()).get(0).equals("Sort A-Z (off)"));
 
         // ---- several items at once ----
         ShelfView multi = new ShelfView(dir.resolve("multi-store").resolve("shelf.txt"));

@@ -255,6 +255,13 @@ public class SlidePanelSmokeTest {
             });
             equal("button switches back to dark", Theme.DARK, onEdt(panel::getTheme));
 
+            // the tidy-up button sits next to the theme button and is wired up
+            check("the tidy-up button has a tooltip", onEdt(() -> panel.moreButton().getToolTipText().contains("tidy")));
+            check("and an action", onEdt(() -> panel.moreButton().getActionListeners().length >= 1));
+            check("and is next to the theme button",
+                    onEdt(() -> panel.moreButton().getParent() == panel.themeButton().getParent()));
+            check("and has an icon", onEdt(() -> panel.moreButton().getIcon() != null && panel.moreButton().getIcon().getIconWidth() > 0));
+
             // search box filters the shelf
             Path folder = store.getParent();
             java.io.File one = Files.createFile(folder.resolve("one.txt")).toFile();

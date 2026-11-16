@@ -80,6 +80,8 @@ public class ShelfView extends JScrollPane {
     private final transient ShelfStorage storage;
     private transient Theme theme = Theme.DARK;
     private String query = "";
+    /** The shelf as it was just before the last tidy-up, or null. Any other change forgets it. */
+    private transient List<ShelfItem> undoSnapshot;
 
     /** A shelf saved in the default location (%APPDATA%\QuickShelf). */
     public ShelfView() {
@@ -410,6 +412,83 @@ public class ShelfView extends JScrollPane {
         return files.isEmpty() ? null : new FileTransferable(files.toArray(new File[0]));
     }
 
+    // ---- tidying up ------------------------------------------------------------------
+
+    /** Sorts the whole shelf A to Z (pinned items stay on top). Not while a search hides rows. */
+    boolean sortByName() {
+        return tidy(ShelfSort.byName(items()));
+    }
+
+    /** Sorts folders before files, each A to Z (pinned items stay on top). Not while searching. */
+    boolean sortFoldersFirst() {
+        return tidy(ShelfSort.foldersFirst(items()));
+    }
+
+    int missingCount() {
+        return ShelfSort.missing(items()).size();
+    }
+
+    /** Removes every item whose file or folder is gone. Returns how many went (0 while searching). */
+    int removeMissing() {
+        if (isSearching()) {
+            return 0;
+        }
+        List<ShelfItem> before = items();
+        List<ShelfItem> gone = ShelfSort.missing(before);
+        if (gone.isEmpty()) {
+            return 0;
+        }
+        List<ShelfItem> kept = new ArrayList<>(before);
+        kept.removeAll(gone);
+        tidy(kept);
+        return gone.size();
+    }
+
+    boolean canUndoTidy() {
+        return undoSnapshot != null;
+    }
+
+    /** Puts the shelf back the way it was before the last sort or clean-up. */
+    boolean undoTidy() {
+        if (undoSnapshot == null) {
+            return false;
+        }
+        setModelItems(undoSnapshot);
+        persist(); // forgets the snapshot, so undo works once
+        return true;
+    }
+
+    private boolean tidy(List<ShelfItem> after) {
+        List<ShelfItem> before = items();
+        if (isSearching() || after.equals(before)) {
+            return false;
+        }
+        setModelItems(after);
+        persist();
+        undoSnapshot = before; // after persist(), which clears it
+        return true;
+    }
+
+    /** The menu with sorting, clean-up and undo. */
+    JPopupMenu buildTidyMenu() {
+        JPopupMenu menu = new JPopupMenu();
+        boolean canSort = !isSearching() && model.size() > 1;
+        int missing = missingCount();
+        menu.add(menuItem("Sort A-Z", canSort, this::sortByName));
+        menu.add(menuItem("Folders first", canSort, this::sortFoldersFirst));
+        menu.add(menuItem(
+                missing == 0 ? "No missing items" : "Remove " + missing + " missing item" + (missing == 1 ? "" : "s"),
+                missing > 0 && !isSearching(), this::removeMissing));
+        menu.addSeparator();
+        menu.add(menuItem("Undo", canUndoTidy(), this::undoTidy));
+        return menu;
+    }
+
+    /** Shows the tidy-up menu just below a component (the header button). */
+    void showTidyMenu(Component below) {
+        buildTidyMenu().show(below, 0, below.getHeight());
+    }
+
     boolean isSearching() {
         return !query.isBlank();
     }
@@ -441,6 +520,7 @@ public class ShelfView extends JScrollPane {
     }
 
     private void persist() {
+        undoSnapshot = null; // every change except a tidy-up makes an older undo stale
         List<ShelfStorage.Entry> entries = new ArrayList<>();
         for (ShelfItem item : items()) {
             entries.add(new ShelfStorage.Entry(item.getPath(), item.isPinned()));
@@ -489,6 +569,8 @@ public class ShelfView extends JScrollPane {
         }
         int index = rowAt(e);
         if (index < 0) {
+            // Right-click on the empty space below the items: the tidy-up menu.
+            buildTidyMenu().show(list, e.getX(), e.getY());
             return;
         }
         if (!list.isSelectedIndex(index)) {

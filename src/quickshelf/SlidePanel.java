@@ -73,6 +73,7 @@ public class SlidePanel {
     private final JLabel title = new JLabel("Quick Shelf");
     private final JLabel hint = new JLabel("Drag files or folders here");
     private final JButton themeButton = new JButton();
+    private final JButton moreButton = new JButton();
     private final SearchField search;
     private final JPanel handleTab = new JPanel();
 
@@ -172,6 +173,7 @@ public class SlidePanel {
         shelf.setTheme(newTheme);
         handleTab.setBackground(newTheme.handle);
         themeButton.repaint();
+        moreButton.repaint();
     }
 
     public Theme getTheme() {
@@ -280,6 +282,10 @@ public class SlidePanel {
         return themeButton;
     }
 
+    JButton moreButton() {
+        return moreButton;
+    }
+
     int shownX() {
         return screen.x + screen.width - PANEL_WIDTH;
     }
@@ -320,22 +326,23 @@ public class SlidePanel {
 
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
 
-        themeButton.setIcon(new HalfMoonIcon());
-        themeButton.setToolTipText("Switch light / dark");
-        themeButton.setBorderPainted(false);
-        themeButton.setContentAreaFilled(false);
-        themeButton.setFocusPainted(false);
-        themeButton.setFocusable(false);
-        themeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        plainIconButton(themeButton, new HalfMoonIcon(), "Switch light / dark");
         themeButton.addActionListener(event -> {
             setTheme(theme.toggled());
             rememberTheme();
         });
+        plainIconButton(moreButton, new DotsIcon(), "Sort and tidy up");
+        moreButton.addActionListener(event -> shelf.showTidyMenu(moreButton));
+
+        JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 2, 0));
+        buttons.setOpaque(false);
+        buttons.add(moreButton);
+        buttons.add(themeButton);
 
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
         titleRow.add(title, BorderLayout.WEST);
-        titleRow.add(themeButton, BorderLayout.EAST);
+        titleRow.add(buttons, BorderLayout.EAST);
 
         header.setOpaque(false);
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
@@ -352,6 +359,17 @@ public class SlidePanel {
         content.add(shelf, BorderLayout.CENTER);
         panel.setContentPane(content);
         installKeyboardShortcuts();
+    }
+
+    /** A flat button that shows only an icon. */
+    private static void plainIconButton(JButton button, Icon icon, String tooltip) {
+        button.setIcon(icon);
+        button.setToolTipText(tooltip);
+        button.setBorderPainted(false);
+        button.setContentAreaFilled(false);
+        button.setFocusPainted(false);
+        button.setFocusable(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
 
     /**
@@ -421,6 +439,32 @@ public class SlidePanel {
                 bounds.y + insets.top,
                 bounds.width - insets.left - insets.right,
                 bounds.height - insets.top - insets.bottom);
+    }
+
+    /** Three small dots in a column, drawn in the current theme's muted colour. */
+    private final class DotsIcon implements Icon {
+        private static final int SIZE = 18;
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(theme.muted);
+            for (int i = 0; i < 3; i++) {
+                g2.fill(new Ellipse2D.Double(x + SIZE / 2.0 - 1.75, y + 3.0 + i * 5.0, 3.5, 3.5));
+            }
+            g2.dispose();
+        }
+
+        @Override
+        public int getIconWidth() {
+            return SIZE;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return SIZE;
+        }
     }
 
     /** A small circle with one half filled, drawn in the current theme's muted colour. */
