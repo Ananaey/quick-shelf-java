@@ -264,6 +264,105 @@ public class ShelfViewTest {
                 copied.get(0).endsWith("keep.txt"));
         equal("a search that hides the other row also hides it from dragging", true, out.exportItemAt(1) == null);
 
+        // ---- several items at once ----
+        ShelfView multi = new ShelfView(dir.resolve("multi-store").resolve("shelf.txt"));
+        List<File> made = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            made.add(Files.createFile(dir.resolve("m" + i + ".txt")).toFile());
+        }
+        multi.addFiles(made);
+        List<File> launched3 = new ArrayList<>();
+        multi.setOpener(new PathOpener(launched3::add));
+        List<String> copied3 = new ArrayList<>();
+        multi.setClipboard(copied3::add);
+
+        equal("nothing is selected at first", 0, multi.selectedCount());
+        equal("with nothing selected, open does nothing", 0, multi.openSelected());
+        equal("with nothing selected, remove does nothing", 0, multi.removeSelected());
+        equal("with nothing selected, copy does nothing", 0, multi.copyPathsOfSelected());
+        check("with nothing selected, pin does nothing", !multi.togglePinSelected());
+        check("with nothing selected, there is nothing to drag", multi.exportSelected() == null);
+        equal("and nothing was changed", 5, multi.items().size());
+
+        multi.selectRows(0, 2, 4);
+        equal("three rows are selected", 3, multi.selectedCount());
+        equal("open opens all three", 3, multi.openSelected());
+        equal("in order", List.of("m1.txt", "m3.txt", "m5.txt"),
+                List.of(launched3.get(0).getName(), launched3.get(1).getName(), launched3.get(2).getName()));
+
+        equal("copy reports three paths", 3, multi.copyPathsOfSelected());
+        equal("one clipboard entry", 1, copied3.size());
+        equal("with one path per line", 3, copied3.get(0).split(System.lineSeparator()).length);
+        check("the lines are the full paths of the selected items", copied3.get(0).startsWith(dir.toString())
+                && copied3.get(0).contains("m3.txt") && !copied3.get(0).contains("m2.txt"));
+
+        java.awt.datatransfer.Transferable dragged = multi.exportSelected();
+        @SuppressWarnings("unchecked")
+        List<File> draggedFiles = (List<File>) dragged.getTransferData(java.awt.datatransfer.DataFlavor.javaFileListFlavor);
+        equal("dragging out hands over all three files", 3, draggedFiles.size());
+        Files.delete(made.get(2).toPath());
+        @SuppressWarnings("unchecked")
+        List<File> afterDelete2 = (List<File>) multi.exportSelected()
+                .getTransferData(java.awt.datatransfer.DataFlavor.javaFileListFlavor);
+        equal("a file that is gone is left out of the drag", 2, afterDelete2.size());
+
+        // pin several at once
+        check("pin the selection", multi.togglePinSelected());
+        equal("pinned items go first, in their order", List.of("m1.txt", "m3.txt", "m5.txt", "m2.txt", "m4.txt"), names(multi));
+        check("all three are pinned", multi.isPinnedAt(0) && multi.isPinnedAt(1) && multi.isPinnedAt(2));
+        check("the others are not", !multi.isPinnedAt(3) && !multi.isPinnedAt(4));
+        equal("the three stay selected", 3, multi.selectedCount());
+        check("unpin when all are pinned", multi.togglePinSelected());
+        check("none are pinned now", !multi.isPinnedAt(0) && !multi.isPinnedAt(1) && !multi.isPinnedAt(2));
+        equal("the order is kept", List.of("m1.txt", "m3.txt", "m5.txt", "m2.txt", "m4.txt"), names(multi));
+        equal("still three selected", 3, multi.selectedCount());
+
+        multi.selectRows(0, 3); // m1 and m2
+        multi.togglePinSelected();
+        equal("pinning two that were apart brings them together at the top",
+                List.of("m1.txt", "m2.txt", "m3.txt", "m5.txt", "m4.txt"), names(multi));
+        multi.selectRows(1, 2); // m2 is pinned, m3 is not
+        multi.togglePinSelected();
+        check("a mixed selection pins all of it", multi.isPinnedAt(0) && multi.isPinnedAt(1) && multi.isPinnedAt(2));
+        check("and only that", !multi.isPinnedAt(3) && !multi.isPinnedAt(4));
+        equal("pins were saved", true, new ShelfView(dir.resolve("multi-store").resolve("shelf.txt")).isPinnedAt(2));
+
+        // remove several at once
+        multi.selectRows(1, 3); // m2 and m5
+        equal("remove takes both", 2, multi.removeSelected());
+        equal("the right ones went", List.of("m1.txt", "m3.txt", "m4.txt"), names(multi));
+        equal("the selection moved to a neighbour", 1, multi.selectedCount());
+        equal("and the removal was saved", 3, new ShelfView(dir.resolve("multi-store").resolve("shelf.txt")).items().size());
+
+        // a search limits the selection to what is shown
+        multi.setQuery("m4");
+        multi.selectRows(0);
+        equal("remove acts on the displayed row only", 1, multi.removeSelected());
+        multi.setQuery("");
+        equal("so the hidden items are untouched", List.of("m1.txt", "m3.txt"), names(multi));
+
+        // opening too many at once is refused
+        ShelfView many = new ShelfView(dir.resolve("many-store").resolve("shelf.txt"));
+        List<File> twelve = new ArrayList<>();
+        for (int i = 1; i <= 12; i++) {
+            twelve.add(Files.createFile(dir.resolve("x" + i + ".txt")).toFile());
+        }
+        many.addFiles(twelve);
+        List<File> launched4 = new ArrayList<>();
+        many.setOpener(new PathOpener(launched4::add));
+        many.selectRows(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
+        equal("twelve selected: nothing opens", 0, many.openSelected());
+        equal("and nothing was launched", 0, launched4.size());
+        many.selectRows(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+        equal("ten selected: all open", 10, many.openSelected());
+        equal("the limit is ten", 10, ShelfView.MAX_OPEN_AT_ONCE);
+
+        Files.delete(twelve.get(1).toPath());
+        launched4.clear();
+        many.selectRows(0, 1, 2);
+        equal("a missing file among several does not stop the others", 2, many.openSelected());
+        equal("the two that exist were launched", 2, launched4.size());
+
         TestRunner.finish();
     }
 }

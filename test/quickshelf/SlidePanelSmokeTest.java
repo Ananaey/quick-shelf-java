@@ -172,6 +172,15 @@ public class SlidePanelSmokeTest {
             equal("Delete removes the selected item", 2, (int) onEdt(() -> keys.shelf().items().size()));
             equal("the right one went", "three.txt", onEdt(() -> keys.shelf().items().get(1).getName()));
 
+            // Ctrl+A selects everything; Enter opens all of it; Delete removes all of it
+            press(list, java.awt.event.KeyEvent.VK_A, java.awt.event.InputEvent.CTRL_DOWN_MASK);
+            equal("Ctrl+A selects every row", 2, (int) onEdt(() -> keys.shelf().selectedCount()));
+            int openedBefore = launched.size();
+            press(list, enter, none);
+            equal("Enter opens every selected item", openedBefore + 2, launched.size());
+            press(list, java.awt.event.KeyEvent.VK_DELETE, none);
+            equal("Delete removes the whole selection", 0, (int) onEdt(() -> keys.shelf().items().size()));
+
             // Ctrl+F selects the search text, even with the keyboard in the list
             onEdt(() -> {
                 keys.search().setText("hello");

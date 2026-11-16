@@ -69,6 +69,12 @@ public class ShelfView extends JScrollPane {
     /** Dragging an item out only ever copies it, so a drop can never move a file out of its folder. */
     static final int DRAG_ACTIONS = TransferHandler.COPY;
 
+    /**
+     * Opening many items at once is allowed up to this many. Select-all plus Enter on a big shelf
+     * would otherwise start dozens of programs.
+     */
+    static final int MAX_OPEN_AT_ONCE = 10;
+
     private transient PathOpener opener = new PathOpener();
     private transient Consumer<String> clipboard = ShelfView::copyToSystemClipboard;
     private final transient ShelfStorage storage;
@@ -83,7 +89,8 @@ public class ShelfView extends JScrollPane {
     /** A shelf saved in the given file. Items saved earlier are loaded right away. */
     public ShelfView(Path storageFile) {
         this.storage = new ShelfStorage(storageFile);
-        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // Ctrl-click and Shift-click pick several items; Ctrl+A picks them all.
+        list.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         list.setCellRenderer(new ItemRenderer());
         list.setFixedCellHeight(34);
         ToolTipManager.sharedInstance().registerComponent(list);
@@ -120,8 +127,8 @@ public class ShelfView extends JScrollPane {
                 showMenuIfPopup(e);
             }
         });
-        bindKey(KeyEvent.VK_ENTER, "open", () -> openAt(list.getSelectedIndex()));
-        bindKey(KeyEvent.VK_DELETE, "remove", () -> removeAt(list.getSelectedIndex()));
+        bindKey(KeyEvent.VK_ENTER, "open", this::openSelected);
+        bindKey(KeyEvent.VK_DELETE, "remove", this::removeSelected);
 
         loadSaved();
     }
@@ -300,6 +307,109 @@ public class ShelfView extends JScrollPane {
         return index >= 0 && index < shown.size() && shown.get(index).isPinned();
     }
 
+    // ---- actions on the whole selection ----------------------------------------------
+
+    private List<ShelfItem> selectedItems() {
+        return list.getSelectedValuesList();
+    }
+
+    int selectedCount() {
+        return list.getSelectedIndices().length;
+    }
+
+    /** Selects the given displayed rows (used by tests). */
+    void selectRows(int... rows) {
+        list.setSelectedIndices(rows);
+    }
+
+    /**
+     * Opens every selected item and returns how many opened. More than {@code MAX_OPEN_AT_ONCE}
+     * selected opens nothing, so one slip of Ctrl+A and Enter cannot start dozens of programs.
+     */
+    int openSelected() {
+        List<ShelfItem> chosen = selectedItems();
+        if (chosen.isEmpty() || chosen.size() > MAX_OPEN_AT_ONCE) {
+            return 0;
+        }
+        int opened = 0;
+        for (ShelfItem item : chosen) {
+            if (opener.open(item.getPath())) {
+                opened++;
+            }
+        }
+        list.repaint(); // refresh the dimmed "not found" look
+        return opened;
+    }
+
+    /** Removes every selected item and keeps a sensible row selected. Returns how many went. */
+    int removeSelected() {
+        List<ShelfItem> chosen = selectedItems();
+        if (chosen.isEmpty()) {
+            return 0;
+        }
+        int firstRow = list.getMinSelectionIndex();
+        chosen.forEach(model::removeElement);
+        refresh();
+        if (!shown.isEmpty()) {
+            list.setSelectedIndex(Math.min(firstRow, shown.size() - 1));
+        }
+        persist();
+        return chosen.size();
+    }
+
+    /** Puts the full paths of the selected items on the clipboard, one per line. Returns how many. */
+    int copyPathsOfSelected() {
+        List<ShelfItem> chosen = selectedItems();
+        if (chosen.isEmpty()) {
+            return 0;
+        }
+        StringBuilder text = new StringBuilder();
+        for (ShelfItem item : chosen) {
+            if (text.length() > 0) {
+                text.append(System.lineSeparator());
+            }
+            text.append(item.getPath());
+        }
+        clipboard.accept(text.toString());
+        return chosen.size();
+    }
+
+    /**
+     * Pins the selected items if any of them is not pinned yet, otherwise unpins them, and keeps
+     * them selected. Returns false if nothing was selected.
+     */
+    boolean togglePinSelected() {
+        List<ShelfItem> chosen = selectedItems();
+        if (chosen.isEmpty()) {
+            return false;
+        }
+        boolean pin = Pinning.shouldPin(items(), chosen);
+        setModelItems(Pinning.withPinned(items(), chosen, pin));
+        List<Integer> rows = new ArrayList<>();
+        for (int i = 0; i < shown.size(); i++) {
+            if (chosen.contains(shown.get(i))) {
+                rows.add(i);
+            }
+        }
+        list.setSelectedIndices(rows.stream().mapToInt(Integer::intValue).toArray());
+        persist();
+        return true;
+    }
+
+    /**
+     * What to hand to another program when the selection is dragged out: the files that still
+     * exist. Null (which cancels the drag) if there are none.
+     */
+    Transferable exportSelected() {
+        List<File> files = new ArrayList<>();
+        for (ShelfItem item : selectedItems()) {
+            if (item.exists()) {
+                files.add(item.getPath().toFile());
+            }
+        }
+        return files.isEmpty() ? null : new FileTransferable(files.toArray(new File[0]));
+    }
+
     boolean isSearching() {
         return !query.isBlank();
     }
@@ -345,15 +455,22 @@ public class ShelfView extends JScrollPane {
 
     /** Rebuilds the displayed rows from the full shelf and the search, keeping the selection if it survives. */
     private void refresh() {
-        ShelfItem selected = list.getSelectedValue();
+        List<ShelfItem> selected = list.getSelectedValuesList();
         shown.clear();
         for (ShelfItem item : Collections.list(model.elements())) {
             if (ShelfFilter.matches(item, query)) {
                 shown.addElement(item);
             }
         }
-        if (selected != null && shown.contains(selected)) {
-            list.setSelectedValue(selected, true);
+        // Keep every selected item that is still shown selected.
+        List<Integer> rows = new ArrayList<>();
+        for (int i = 0; i < shown.size(); i++) {
+            if (selected.contains(shown.get(i))) {
+                rows.add(i);
+            }
+        }
+        if (!rows.isEmpty()) {
+            list.setSelectedIndices(rows.stream().mapToInt(Integer::intValue).toArray());
         }
     }
 
@@ -374,10 +491,18 @@ public class ShelfView extends JScrollPane {
         if (index < 0) {
             return;
         }
-        list.setSelectedIndex(index);
+        if (!list.isSelectedIndex(index)) {
+            list.setSelectedIndex(index); // a right-click inside the selection keeps all of it
+        }
+        JPopupMenu menu = new JPopupMenu();
+        int count = selectedCount();
+        if (count > 1) {
+            addSelectionMenu(menu, count);
+            menu.show(list, e.getX(), e.getY());
+            return;
+        }
 
         boolean canMove = !isSearching();
-        JPopupMenu menu = new JPopupMenu();
         menu.add(menuItem("Open", true, () -> openAt(index)));
         menu.add(menuItem("Show in folder", true, () -> showInFolderAt(index)));
         menu.add(menuItem("Copy path", true, () -> copyPathAt(index)));
@@ -391,6 +516,19 @@ public class ShelfView extends JScrollPane {
         menu.addSeparator();
         menu.add(menuItem("Remove from shelf", true, () -> removeAt(index)));
         menu.show(list, e.getX(), e.getY());
+    }
+
+    /** The right-click menu when several items are selected. */
+    private void addSelectionMenu(JPopupMenu menu, int count) {
+        boolean pin = Pinning.shouldPin(items(), selectedItems());
+        menu.add(menuItem(
+                count <= MAX_OPEN_AT_ONCE ? "Open " + count + " items" : "Open (select " + MAX_OPEN_AT_ONCE + " or fewer)",
+                count <= MAX_OPEN_AT_ONCE, this::openSelected));
+        menu.add(menuItem("Copy " + count + " paths", true, this::copyPathsOfSelected));
+        menu.addSeparator();
+        menu.add(menuItem((pin ? "Pin " : "Unpin ") + count + " items", true, this::togglePinSelected));
+        menu.addSeparator();
+        menu.add(menuItem("Remove " + count + " items from shelf", true, this::removeSelected));
     }
 
     private static JMenuItem menuItem(String text, boolean enabled, Runnable action) {
@@ -422,7 +560,7 @@ public class ShelfView extends JScrollPane {
 
         @Override
         protected Transferable createTransferable(JComponent component) {
-            return exportItemAt(list.getSelectedIndex());
+            return exportSelected();
         }
 
         @Override
