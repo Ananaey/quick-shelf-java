@@ -18,6 +18,7 @@ Java is already bundled, so you do not need to install anything. The app is not 
 
 - **Add:** drag files or folders from Explorer onto the open shelf.
 - **Open:** double-click an item, or select it and press Enter.
+- **Select several:** Ctrl-click or Shift-click to pick more than one item, or press Ctrl+A for all of them. Then Enter opens them all (up to 10 at once), Delete removes them, and the right-click menu can copy all their paths (one per line), pin or unpin them together, or remove them. Dragging out takes the whole selection.
 - **Drag out:** drag an item from the shelf into an email, a chat window or an Explorer folder. It is always copied, never moved, so your original file stays where it was.
 - **More:** right-click an item for Open, Show in folder, Copy path, Pin to top, Move up, Move down and Remove. Delete also removes.
 - **Pin:** pinned items stay at the top of the shelf, marked with a blue dot. Move up and Move down work inside the pinned group and inside the rest, so a pinned item never drifts down.
@@ -78,4 +79,5 @@ git push origin v0.2.0
 - [x] Day 11: keyboard control (Ctrl+F, Enter to open the first match, Down, Escape), tested with real key events
 - [x] Day 12: only one copy runs at a time; starting it again opens the running one
 - [x] Day 13: the shelf fits short screens and follows screen changes (docking, resolution, taskbar)
+- [x] Day 14: select several items (Ctrl/Shift-click, Ctrl+A) to open, pin, copy paths, remove or drag out together
 - [ ] Later: named groups, a real installer (needs WiX), code signing
