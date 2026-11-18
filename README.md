@@ -27,10 +27,11 @@ Java is already bundled, so you do not need to install anything. The app is not 
 - **Keyboard only:** type to search, press **Enter** to open the first match, **Down** to move into the list (then Enter opens, Delete removes), **Ctrl+F** to get back to the search box, and **Escape** to clear the search and then close the shelf.
 - **Theme:** the half-filled circle switches light and dark, and the app remembers your choice. Until you pick one it follows your Windows setting.
 - **Tray icon:** left-click shows or hides the shelf. Right-click for **Start with Windows** and **Quit**.
+- **Resize:** drag the left edge of the open shelf to make it wider or narrower (240 to 640 px, and never more than half the screen). It remembers the width. On a narrower screen it shrinks to fit and goes back to your width on a bigger one.
 - **Fits your screen:** the shelf shrinks on short screens so it is never cut off, and it re-checks the screen every couple of seconds and every time it opens, so docking a laptop, changing resolution or scaling, or moving the taskbar does not leave it off-screen.
 - **One copy at a time:** starting Quick Shelf again (for example from the Start menu while it is already in the tray) does not open a second one. The copy that is already running slides the shelf open and the new one exits. It uses a port on this computer only (47831), and if another program owns that port Quick Shelf still runs.
 
-Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line, with `[pinned]` in front of pinned ones. Your theme choice is in `settings.properties` in the same folder (delete that file to go back to following Windows).
+Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line, with `[pinned]` in front of pinned ones. Your theme choice and shelf width are in `settings.properties` in the same folder (delete that file to go back to following Windows and the default width).
 
 ## Run from source
 
@@ -82,4 +83,5 @@ git push origin v0.2.0
 - [x] Day 13: the shelf fits short screens and follows screen changes (docking, resolution, taskbar)
 - [x] Day 14: select several items (Ctrl/Shift-click, Ctrl+A) to open, pin, copy paths, remove or drag out together
 - [x] Day 15: tidy-up menu: sort A-Z (natural order), folders first, remove missing items, undo
+- [x] Day 16: drag the left edge to resize the shelf; the width is remembered
 - [ ] Later: named groups, a real installer (needs WiX), code signing
