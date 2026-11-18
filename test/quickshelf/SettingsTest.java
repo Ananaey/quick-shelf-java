@@ -51,6 +51,42 @@ public class SettingsTest {
         memory.save(); // must do nothing, and not fail
         equal("in-memory settings keep the value", "dark", memory.themePreference());
 
+        // ---- panel width ----
+        Path widthFile = dir.resolve("width").resolve("settings.properties");
+        Settings w = Settings.load(widthFile);
+        equal("the default width", 320, w.panelWidth());
+        w.setPanelWidth(450);
+        equal("a chosen width", 450, w.panelWidth());
+        w.setPanelWidth(10);
+        equal("too narrow is raised to the minimum", 240, w.panelWidth());
+        w.setPanelWidth(99999);
+        equal("too wide is cut to the maximum", 640, w.panelWidth());
+        w.setPanelWidth(410);
+        w.setThemePreference("light");
+        w.save();
+        Settings again = Settings.load(widthFile);
+        equal("the width survives a reload", 410, again.panelWidth());
+        equal("and the theme next to it", "light", again.themePreference());
+        again.setPanelWidth(500);
+        again.save();
+        equal("changing the width keeps the theme", "light", Settings.load(widthFile).themePreference());
+
+        Files.write(widthFile, "width=banana\ntheme=dark\n".getBytes(StandardCharsets.UTF_8));
+        equal("text that is not a number means the default", 320, Settings.load(widthFile).panelWidth());
+        equal("and does not disturb the theme", "dark", Settings.load(widthFile).themePreference());
+        Files.write(widthFile, "width=  520  \n".getBytes(StandardCharsets.UTF_8));
+        equal("spaces around the number are fine", 520, Settings.load(widthFile).panelWidth());
+        Files.write(widthFile, "width=-40\n".getBytes(StandardCharsets.UTF_8));
+        equal("a negative number is raised to the minimum", 240, Settings.load(widthFile).panelWidth());
+        Files.write(widthFile, "width=12345678901234567890\n".getBytes(StandardCharsets.UTF_8));
+        equal("a number too big to read means the default", 320, Settings.load(widthFile).panelWidth());
+        Files.write(widthFile, "width=\n".getBytes(StandardCharsets.UTF_8));
+        equal("an empty value means the default", 320, Settings.load(widthFile).panelWidth());
+        Settings memoryWidth = Settings.inMemory();
+        memoryWidth.setPanelWidth(480);
+        memoryWidth.save();
+        equal("in-memory settings keep the width without writing", 480, memoryWidth.panelWidth());
+
         equal("default file name", "settings.properties", Settings.defaultPath().getFileName().toString());
         equal("it sits next to the shelf file", ShelfStorage.defaultPath().getParent(), Settings.defaultPath().getParent());
 

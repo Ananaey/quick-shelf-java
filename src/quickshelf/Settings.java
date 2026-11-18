@@ -16,6 +16,7 @@ import java.util.Properties;
  */
 public final class Settings {
     static final String THEME_KEY = "theme";
+    static final String WIDTH_KEY = "width";
     static final String AUTO = "auto";
 
     private final Path file; // null means "never written to disk"
@@ -55,6 +56,23 @@ public final class Settings {
 
     public void setThemePreference(String preference) {
         values.setProperty(THEME_KEY, normalize(preference));
+    }
+
+    /** The width the user chose for the shelf, kept between the smallest and largest allowed. */
+    public int panelWidth() {
+        String text = values.getProperty(WIDTH_KEY);
+        if (text == null) {
+            return PanelLayout.DEFAULT_WIDTH;
+        }
+        try {
+            return PanelLayout.clampWidth(Integer.parseInt(text.strip()));
+        } catch (NumberFormatException e) {
+            return PanelLayout.DEFAULT_WIDTH;
+        }
+    }
+
+    public void setPanelWidth(int width) {
+        values.setProperty(WIDTH_KEY, Integer.toString(PanelLayout.clampWidth(width)));
     }
 
     /** Writes the file via a temp copy so a crash cannot leave it half-written. */
