@@ -41,6 +41,132 @@ public class SlidePanelSmokeTest {
         });
     }
 
+    /** Sends a real mouse event (button 1 held) to a component, with a position on the screen. */
+    private static void mouse(java.awt.Component target, int id, int xOnScreen) throws Exception {
+        onEdt(() -> {
+            target.dispatchEvent(new java.awt.event.MouseEvent(
+                    target, id, System.currentTimeMillis(), java.awt.event.InputEvent.BUTTON1_DOWN_MASK,
+                    3, 100, xOnScreen, 200, 1, false, java.awt.event.MouseEvent.BUTTON1));
+            return null;
+        });
+    }
+
+    /** Drags the left edge of the shelf: press at one screen x, move to another, let go. */
+    private static void dragGrip(SlidePanel p, int fromX, int toX) throws Exception {
+        java.awt.Component grip = p.grip();
+        mouse(grip, java.awt.event.MouseEvent.MOUSE_PRESSED, fromX);
+        mouse(grip, java.awt.event.MouseEvent.MOUSE_DRAGGED, (fromX + toX) / 2);
+        mouse(grip, java.awt.event.MouseEvent.MOUSE_DRAGGED, toX);
+        mouse(grip, java.awt.event.MouseEvent.MOUSE_RELEASED, toX);
+    }
+
+    /** Drags the left edge to resize the shelf, and checks the width is kept and remembered. */
+    private static void resizeScenario(Path folder) throws Exception {
+        Path settingsFile = folder.resolve("resize-settings.properties");
+        java.util.concurrent.atomic.AtomicReference<java.awt.Rectangle> area =
+                new java.util.concurrent.atomic.AtomicReference<>(new java.awt.Rectangle(0, 0, 1920, 1040));
+        Settings settings = Settings.load(settingsFile);
+        SlidePanel p = onEdt(() -> new SlidePanel(folder.resolve("resize.txt"), Theme.DARK, settings, area::get));
+        try {
+            equal("the shelf starts at the default width", 320, (int) onEdt(p::panelWidth));
+            check("the edge strip shows a resize cursor",
+                    onEdt(() -> p.grip().getCursor().getType() == java.awt.Cursor.W_RESIZE_CURSOR));
+            check("it cannot be resized while the shelf is closed", !onEdt(() -> p.resizeTo(400)));
+            equal("and the width is unchanged", 320, (int) onEdt(p::panelWidth));
+
+            onEdt(() -> {
+                p.toggle();
+                return null;
+            });
+            waitForAnimation(p);
+            equal("open: flush with the right edge", 1920 - 320, (int) onEdt(p::panelX));
+
+            check("making it wider works", onEdt(() -> p.resizeTo(420)));
+            equal("the shelf is 420 wide", 420, (int) onEdt(p::panelWidth));
+            equal("still flush with the right edge", 1920 - 420, (int) onEdt(p::panelX));
+            equal("the handle moved with it", 1920 - 420 - SlidePanel.HANDLE_WIDTH, (int) onEdt(p::handleX));
+            check("asking for the same width is not a change", !onEdt(() -> p.resizeTo(420)));
+            check("too narrow stops at the minimum", onEdt(() -> p.resizeTo(100)) && onEdt(p::panelWidth) == 240);
+            check("too wide stops at the maximum", onEdt(() -> p.resizeTo(5000)) && onEdt(p::panelWidth) == 640);
+            equal("still flush with the edge at the maximum", 1920 - 640, (int) onEdt(p::panelX));
+            onEdt(() -> p.resizeTo(320));
+
+            // a real drag on the left edge: moving left by 100 px makes it 100 px wider
+            check("nothing saved yet", !Files.exists(settingsFile));
+            dragGrip(p, 1600, 1500);
+            equal("dragging left widens it", 420, (int) onEdt(p::panelWidth));
+            equal("and keeps it against the edge", 1920 - 420, (int) onEdt(p::panelX));
+            check("letting go saves the width", Files.exists(settingsFile));
+            equal("the saved width is the new one", 420, Settings.load(settingsFile).panelWidth());
+
+            dragGrip(p, 1500, 1560);
+            equal("dragging right narrows it", 360, (int) onEdt(p::panelWidth));
+            equal("and it is saved again", 360, Settings.load(settingsFile).panelWidth());
+
+            dragGrip(p, 1500, -2000);
+            equal("dragging far left stops at the maximum", 640, (int) onEdt(p::panelWidth));
+            dragGrip(p, 100, 5000);
+            equal("dragging far right stops at the minimum", 240, (int) onEdt(p::panelWidth));
+            equal("the limit is what gets saved, not the mouse position", 240, Settings.load(settingsFile).panelWidth());
+
+            onEdt(() -> p.resizeTo(420));
+            onEdt(() -> {
+                p.rememberWidth();
+                return null;
+            });
+            Files.delete(settingsFile);
+            dragGrip(p, 1500, 1500); // a plain click, no movement
+            check("a click on the edge without dragging does not rewrite the settings", !Files.exists(settingsFile));
+            equal("and does not change the width", 420, (int) onEdt(p::panelWidth));
+
+            // the width survives closing and opening
+            onEdt(() -> {
+                p.toggle();
+                return null;
+            });
+            waitForAnimation(p);
+            onEdt(() -> {
+                p.toggle();
+                return null;
+            });
+            waitForAnimation(p);
+            equal("closing and opening keeps the width", 420, (int) onEdt(p::panelWidth));
+            equal("and the edge", 1920 - 420, (int) onEdt(p::panelX));
+
+            // a narrow screen shrinks the shelf, but the choice is remembered for a bigger one
+            area.set(new java.awt.Rectangle(0, 0, 800, 1040));
+            check("a narrow screen is noticed", onEdt(p::refreshScreen));
+            equal("the shelf takes at most half of it", 400, (int) onEdt(p::panelWidth));
+            equal("it still sits against the edge", 800 - 400, (int) onEdt(p::panelX));
+            equal("but the chosen width is kept", 420, (int) onEdt(p::preferredWidth));
+            area.set(new java.awt.Rectangle(0, 0, 1920, 1040));
+            onEdt(p::refreshScreen);
+            equal("on a big screen again it is back to the chosen width", 420, (int) onEdt(p::panelWidth));
+            equal("against the edge", 1920 - 420, (int) onEdt(p::panelX));
+        } finally {
+            onEdt(() -> {
+                p.dispose();
+                return null;
+            });
+        }
+
+        // a new panel opens at the saved width
+        onEdt(() -> {
+            settings.setPanelWidth(500);
+            return null;
+        });
+        SlidePanel again = onEdt(() -> new SlidePanel(folder.resolve("resize2.txt"), Theme.DARK, settings, area::get));
+        try {
+            equal("a new shelf starts at the saved width", 500, (int) onEdt(again::panelWidth));
+            equal("and parks off-screen at the right edge", 1920, (int) onEdt(again::panelX));
+        } finally {
+            onEdt(() -> {
+                again.dispose();
+                return null;
+            });
+        }
+    }
+
     /** Pretends the screen changes (docking, resolution, taskbar) and checks the shelf follows. */
     private static void screenScenario(Path folder) throws Exception {
         java.util.concurrent.atomic.AtomicReference<java.awt.Rectangle> area =
@@ -325,6 +451,7 @@ public class SlidePanelSmokeTest {
 
             keyboardScenario(store.getParent());
             screenScenario(store.getParent());
+            resizeScenario(store.getParent());
 
             // The theme choice is remembered: click the button, then open a second panel.
             Path settingsFile = store.getParent().resolve("settings.properties");

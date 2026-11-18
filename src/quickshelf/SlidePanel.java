@@ -48,7 +48,9 @@ import javax.swing.Timer;
  * focus, so typing in the search box and the Enter / Delete keys would not work.
  */
 public class SlidePanel {
-    static final int PANEL_WIDTH = 320;
+    /** The width a new installation starts with. The user can drag the left edge to change it. */
+    static final int PANEL_WIDTH = PanelLayout.DEFAULT_WIDTH;
+    static final int GRIP_WIDTH = 8;
     static final int HANDLE_WIDTH = 14;
     static final int HANDLE_HEIGHT = 80;
     static final int ANIMATION_MS = 220;
@@ -67,7 +69,12 @@ public class SlidePanel {
     private Rectangle screen;
     private int panelTop;
     private int panelHeight;
+    /** The width the user chose. The width in use can be less on a narrow screen. */
+    private int preferredWidth;
+    private int panelWidth;
 
+    private final JPanel frame = new JPanel(new BorderLayout());
+    private final JPanel grip = new JPanel();
     private final JPanel content = new JPanel(new BorderLayout(0, 8));
     private final JPanel header = new JPanel();
     private final JLabel title = new JLabel("Quick Shelf");
@@ -109,6 +116,7 @@ public class SlidePanel {
         this.screenSource = screenSource;
         this.shelf = new ShelfView(storageFile);
         this.search = new SearchField(shelf::setQuery);
+        this.preferredWidth = settings.panelWidth();
         applyScreen(screenSource.get());
         buildPanel();
         buildHandle();
@@ -138,7 +146,7 @@ public class SlidePanel {
         fromX = panel.getX();
         toX = open ? shownX() : hiddenX();
         startedAt = System.currentTimeMillis();
-        durationMs = SlideMath.durationFor(fromX, toX, PANEL_WIDTH, ANIMATION_MS);
+        durationMs = SlideMath.durationFor(fromX, toX, panelWidth, ANIMATION_MS);
         timer.restart();
     }
 
@@ -166,6 +174,8 @@ public class SlidePanel {
 
     public void setTheme(Theme newTheme) {
         this.theme = newTheme;
+        frame.setBackground(newTheme.panelBackground);
+        grip.setBackground(newTheme.panelBackground);
         content.setBackground(newTheme.panelBackground);
         title.setForeground(newTheme.text);
         hint.setForeground(newTheme.muted);
@@ -218,17 +228,52 @@ public class SlidePanel {
         return true;
     }
 
-    /** Remembers the screen and works out how tall the panel should be on it. */
+    /** Remembers the screen and works out how big the panel should be on it. */
     private void applyScreen(Rectangle area) {
         this.screen = area;
         PanelLayout.Vertical layout = PanelLayout.vertical(area.height);
         this.panelTop = area.y + layout.top;
         this.panelHeight = layout.height;
+        this.panelWidth = PanelLayout.width(preferredWidth, area.width);
     }
 
     private RoundRectangle2D panelShape() {
         // The shape is wider than the window, so only the left corners are rounded.
-        return new RoundRectangle2D.Double(0, 0, PANEL_WIDTH + 40, panelHeight, 32, 32);
+        return new RoundRectangle2D.Double(0, 0, panelWidth + 40, panelHeight, 32, 32);
+    }
+
+    /**
+     * Makes the open shelf the requested width (within the limits and the screen), keeping its
+     * right edge on the edge of the screen. Only works while it is fully open and not sliding.
+     * Returns true if the width changed. Call {@link #rememberWidth()} when the user lets go.
+     */
+    boolean resizeTo(int requestedWidth) {
+        if (!open || timer.isRunning()) {
+            return false;
+        }
+        preferredWidth = PanelLayout.clampWidth(requestedWidth);
+        int effective = PanelLayout.width(preferredWidth, screen.width);
+        if (effective == panelWidth) {
+            return false;
+        }
+        panelWidth = effective;
+        panel.setShape(panelShape());
+        placeAt(shownX());
+        return true;
+    }
+
+    /** Saves the chosen width, so the shelf opens at it next time. */
+    void rememberWidth() {
+        if (preferredWidth == settings.panelWidth()) {
+            return; // nothing changed (for example a plain click on the edge): do not rewrite the file
+        }
+        settings.setPanelWidth(preferredWidth);
+        try {
+            settings.save();
+        } catch (IOException e) {
+            // Not being able to remember the width must never break resizing.
+            System.err.println("Quick Shelf: could not save settings: " + e.getMessage());
+        }
     }
 
     // ---- state, visible to tests ------------------------------------------------
@@ -251,6 +296,19 @@ public class SlidePanel {
 
     int panelHeight() {
         return panel.getHeight();
+    }
+
+    int panelWidth() {
+        return panel.getWidth();
+    }
+
+    int preferredWidth() {
+        return preferredWidth;
+    }
+
+    /** The strip on the shelf's left edge that is dragged to resize it. */
+    JPanel grip() {
+        return grip;
     }
 
     int handleX() {
@@ -287,7 +345,7 @@ public class SlidePanel {
     }
 
     int shownX() {
-        return screen.x + screen.width - PANEL_WIDTH;
+        return screen.x + screen.width - panelWidth;
     }
 
     int hiddenX() {
@@ -309,7 +367,7 @@ public class SlidePanel {
     }
 
     private void placeAt(int panelX) {
-        panel.setBounds(panelX, panelTop, PANEL_WIDTH, panelHeight);
+        panel.setBounds(panelX, panelTop, panelWidth, panelHeight);
         handle.setBounds(panelX - HANDLE_WIDTH, panelTop, HANDLE_WIDTH, HANDLE_HEIGHT);
     }
 
@@ -319,10 +377,10 @@ public class SlidePanel {
         panel.setUndecorated(true);
         panel.setType(Window.Type.UTILITY); // no taskbar button
         panel.setAlwaysOnTop(true);
-        panel.setSize(PANEL_WIDTH, panelHeight);
+        panel.setSize(panelWidth, panelHeight);
         panel.setShape(panelShape());
 
-        content.setBorder(BorderFactory.createEmptyBorder(22, 22, 22, 22));
+        content.setBorder(BorderFactory.createEmptyBorder(22, 14, 22, 22));
 
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
 
@@ -357,7 +415,38 @@ public class SlidePanel {
 
         content.add(header, BorderLayout.NORTH);
         content.add(shelf, BorderLayout.CENTER);
-        panel.setContentPane(content);
+
+        // The left edge is a thin strip that can be dragged to make the shelf wider or narrower.
+        grip.setPreferredSize(new Dimension(GRIP_WIDTH, 0));
+        grip.setCursor(Cursor.getPredefinedCursor(Cursor.W_RESIZE_CURSOR));
+        grip.setToolTipText("Drag to resize");
+        MouseAdapter dragging = new MouseAdapter() {
+            private int pressedAtX;
+            private int widthWhenPressed;
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                pressedAtX = e.getXOnScreen();
+                widthWhenPressed = panelWidth;
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                // Screen coordinates, because the panel moves while it resizes. Dragging left widens it.
+                resizeTo(widthWhenPressed + (pressedAtX - e.getXOnScreen()));
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                rememberWidth();
+            }
+        };
+        grip.addMouseListener(dragging);
+        grip.addMouseMotionListener(dragging);
+
+        frame.add(grip, BorderLayout.WEST);
+        frame.add(content, BorderLayout.CENTER);
+        panel.setContentPane(frame);
         installKeyboardShortcuts();
     }
 
