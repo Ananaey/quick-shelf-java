@@ -18,6 +18,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -27,6 +28,7 @@ import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
+import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JList;
 import javax.swing.JMenuItem;
@@ -62,8 +64,7 @@ public class ShelfView extends JScrollPane {
             if (index < 0) {
                 return null;
             }
-            ShelfItem item = shown.get(index);
-            return item.exists() ? item.getPath().toString() : item.getPath() + "  (not found)";
+            return tooltipFor(shown.get(index));
         }
     };
     /** Dragging an item out only ever copies it, so a drop can never move a file out of its folder. */
@@ -75,6 +76,13 @@ public class ShelfView extends JScrollPane {
      */
     static final int MAX_OPEN_AT_ONCE = 10;
 
+    /** How long "this file exists" is trusted before it is checked again in the background. */
+    private static final long STATUS_REFRESH_MS = 3000;
+    private static final Icon BLANK_ICON = new BlankIcon();
+
+    /** True for a path that is known not to exist. Unknown counts as "exists" until checked. */
+    private transient AsyncCache<Path, Boolean> missing;
+    private transient AsyncCache<Path, Icon> icons;
     private transient PathOpener opener = new PathOpener();
     private transient Consumer<String> clipboard = ShelfView::copyToSystemClipboard;
     private final transient ShelfStorage storage;
@@ -91,6 +99,17 @@ public class ShelfView extends JScrollPane {
     /** A shelf saved in the given file. Items saved earlier are loaded right away. */
     public ShelfView(Path storageFile) {
         this.storage = new ShelfStorage(storageFile);
+        // Painting must never wait on the disk: whether a file exists and what its icon is are
+        // looked up on background threads (a file on a switched-off network drive can take many
+        // seconds to answer). Until the answer arrives a row looks normal with a blank icon.
+        this.missing = new AsyncCache<>(path -> !Files.exists(path), Boolean.FALSE,
+                System::currentTimeMillis, STATUS_REFRESH_MS, this::repaintSoon);
+        // Icons use ONE background thread: asking the Windows shell for icons from several threads
+        // at once made the JDK's graphics clean-up thread print "Exception while removing
+        // reference". The status checks do not touch the shell, so they can run side by side.
+        this.icons = new AsyncCache<>(
+                path -> FileSystemView.getFileSystemView().getSystemIcon(path.toFile()), BLANK_ICON,
+                System::currentTimeMillis, 0, this::repaintSoon, 1);
         // Ctrl-click and Shift-click pick several items; Ctrl+A picks them all.
         list.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         list.setCellRenderer(new ItemRenderer());
@@ -145,6 +164,7 @@ public class ShelfView extends JScrollPane {
         }
         List<ShelfItem> added = ShelfItem.newItems(paths, items());
         added.forEach(model::addElement);
+        prefetch(added);
         if (!added.isEmpty()) {
             refresh();
             persist();
@@ -240,6 +260,24 @@ public class ShelfView extends JScrollPane {
 
     boolean isDragEnabled() {
         return list.getDragEnabled();
+    }
+
+    /** What the displayed row's tooltip says right now (used by tests). */
+    String tooltipAt(int index) {
+        return index < 0 || index >= shown.size() ? null : tooltipFor(shown.get(index));
+    }
+
+    /** Whether the displayed row is currently shown as missing (used by tests). */
+    boolean isMissingAt(int index) {
+        return index >= 0 && index < shown.size() && missing.get(shown.get(index).getPath());
+    }
+
+    /** Swaps the background lookups, so a test can make them slow or fail. */
+    void setLookups(AsyncCache<Path, Boolean> missingLookup, AsyncCache<Path, Icon> iconLookup) {
+        this.missing.close();
+        this.icons.close();
+        this.missing = missingLookup;
+        this.icons = iconLookup;
     }
 
     void setClipboard(Consumer<String> clipboard) {
@@ -510,6 +548,45 @@ public class ShelfView extends JScrollPane {
         }
         // A hand-edited file may list a pinned item after unpinned ones: pinned items go first.
         setModelItems(Pinning.normalized(loaded));
+        prefetch(loaded);
+    }
+
+    /**
+     * Starts looking up icons and file status in the background straight away, so by the time the
+     * shelf is opened and painted the answers are usually ready.
+     */
+    private void prefetch(List<ShelfItem> items) {
+        for (ShelfItem item : items) {
+            missing.get(item.getPath());
+            icons.get(item.getPath());
+        }
+    }
+
+    private void repaintSoon() {
+        SwingUtilities.invokeLater(list::repaint);
+    }
+
+    /** The tooltip for a row. Uses what is already known, so it never waits for the disk. */
+    private String tooltipFor(ShelfItem item) {
+        return missing.get(item.getPath()) ? item.getPath() + "  (not found)" : item.getPath().toString();
+    }
+
+    /** An icon-sized space, shown until the real icon has been fetched. */
+    private static final class BlankIcon implements Icon {
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            // nothing to draw
+        }
+
+        @Override
+        public int getIconWidth() {
+            return 16;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return 16;
+        }
     }
 
     /** Replaces everything on the shelf with the given items, in that order. */
@@ -697,7 +774,7 @@ public class ShelfView extends JScrollPane {
             pinned = item.isPinned();
             selectedRow = isSelected;
             setText(item.getName());
-            setIcon(FileSystemView.getFileSystemView().getSystemIcon(item.getPath().toFile()));
+            setIcon(icons.get(item.getPath()));
             setIconTextGap(10);
             setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
             setOpaque(true);
@@ -705,7 +782,7 @@ public class ShelfView extends JScrollPane {
             if (isSelected) {
                 setForeground(Color.WHITE);
             } else {
-                setForeground(item.exists() ? theme.text : theme.muted);
+                setForeground(missing.get(item.getPath()) ? theme.muted : theme.text);
             }
             return this;
         }

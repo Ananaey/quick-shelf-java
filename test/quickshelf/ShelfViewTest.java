@@ -13,6 +13,18 @@ import static quickshelf.TestRunner.equal;
 
 /** Uses the real list and drop handler, but never opens a window, so it runs without a display. */
 public class ShelfViewTest {
+    /** Waits for something that happens on another thread. */
+    private static boolean waitFor(java.util.function.BooleanSupplier condition, long millis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + millis;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return condition.getAsBoolean();
+    }
+
     /** The text of each menu entry, with " (off)" after the ones that are greyed out. */
     private static List<String> menuLabels(javax.swing.JPopupMenu menu) {
         List<String> labels = new ArrayList<>();
@@ -377,6 +389,71 @@ public class ShelfViewTest {
         ShelfView single = new ShelfView(dir.resolve("single-store").resolve("shelf.txt"));
         single.addFiles(List.of(tA));
         check("one item cannot be sorted", menuLabels(single.buildTidyMenu()).get(0).equals("Sort A-Z (off)"));
+
+        // ---- a file on a dead drive must never freeze the list ----
+        Path slowDir = Files.createDirectories(dir.resolve("slow"));
+        File slowFile = Files.createFile(slowDir.resolve("on-a-dead-drive.txt")).toFile();
+        ShelfView slowView = new ShelfView(dir.resolve("slow-store").resolve("shelf.txt"));
+        java.util.concurrent.CountDownLatch gate = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger statusLookups = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger iconLookups = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger repaints = new java.util.concurrent.atomic.AtomicInteger();
+        AsyncCache<Path, Boolean> stuckStatus = new AsyncCache<>(path -> {
+            statusLookups.incrementAndGet();
+            gate.await(); // the drive does not answer until the gate opens
+            return !Files.exists(path);
+        }, Boolean.FALSE, System::currentTimeMillis, 3000, repaints::incrementAndGet);
+        AsyncCache<Path, javax.swing.Icon> stuckIcons = new AsyncCache<>(path -> {
+            iconLookups.incrementAndGet();
+            gate.await();
+            return null;
+        }, new javax.swing.ImageIcon(), System::currentTimeMillis, 0, () -> { });
+        slowView.setLookups(stuckStatus, stuckIcons);
+        slowView.addFiles(List.of(slowFile));
+
+        check("adding a file starts the lookups at once, without any painting",
+                waitFor(() -> statusLookups.get() == 1 && iconLookups.get() == 1, 5000));
+        String plainPath = slowFile.toPath().toAbsolutePath().normalize().toString();
+        long t0 = System.nanoTime();
+        String whileStuck = slowView.tooltipAt(0);
+        boolean missingWhileStuck = slowView.isMissingAt(0);
+        long stuckMillis = (System.nanoTime() - t0) / 1_000_000;
+        // A blocked read would wait for the gate, which stays shut until later, so a generous limit still tells them apart.
+        check("the tooltip does not wait for the dead drive (" + stuckMillis + " ms)", stuckMillis < 3000);
+        equal("until it answers, the row looks normal", plainPath, whileStuck);
+        check("and is not shown as missing", !missingWhileStuck);
+        long t1 = System.nanoTime();
+        for (int i = 0; i < 2000; i++) {
+            slowView.tooltipAt(0);
+            slowView.isMissingAt(0);
+        }
+        long manyMillis = (System.nanoTime() - t1) / 1_000_000;
+        check("2000 more reads while it is stuck are still instant (" + manyMillis + " ms)", manyMillis < 5000);
+        equal("and start no extra lookups", 1, statusLookups.get());
+
+        Files.delete(slowFile.toPath()); // the file is really gone by the time the drive answers
+        gate.countDown();
+        check("when the drive finally answers, the row shows as missing", waitFor(() -> slowView.isMissingAt(0), 5000));
+        check("with the usual tooltip", slowView.tooltipAt(0).endsWith("(not found)"));
+        check("and a repaint was requested", repaints.get() >= 1);
+
+        // the real lookups: a file that disappears is noticed within a few seconds
+        File realFile = Files.createFile(slowDir.resolve("real.txt")).toFile();
+        ShelfView realView = new ShelfView(dir.resolve("real-store").resolve("shelf.txt"));
+        realView.addFiles(List.of(realFile));
+        check("a file that exists is not shown as missing", !realView.isMissingAt(0));
+        Files.delete(realFile.toPath());
+        check("once it is deleted the shelf notices on its own", waitFor(() -> realView.isMissingAt(0), 10000));
+        check("and the tooltip says so", realView.tooltipAt(0).endsWith("(not found)"));
+
+        // a saved item whose file is already gone is shown as missing without anyone looking at it
+        File gone = Files.createFile(slowDir.resolve("gone-before-start.txt")).toFile();
+        Path goneStore = dir.resolve("gone-store").resolve("shelf.txt");
+        new ShelfView(goneStore).addFiles(List.of(gone));
+        Files.delete(gone.toPath());
+        ShelfView afterRestart = new ShelfView(goneStore);
+        check("on start the lookups begin by themselves and find it missing", waitFor(() -> afterRestart.isMissingAt(0), 5000));
+        check("bad rows give nothing", afterRestart.tooltipAt(9) == null && !afterRestart.isMissingAt(-1));
 
         // ---- several items at once ----
         ShelfView multi = new ShelfView(dir.resolve("multi-store").resolve("shelf.txt"));
