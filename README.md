@@ -27,6 +27,7 @@ Java is already bundled, so you do not need to install anything. The app is not 
 - **Keyboard only:** type to search, press **Enter** to open the first match, **Down** to move into the list (then Enter opens, Delete removes), **Ctrl+F** to get back to the search box, and **Escape** to clear the search and then close the shelf.
 - **Theme:** the half-filled circle switches light and dark, and the app remembers your choice. Until you pick one it follows your Windows setting.
 - **Tray icon:** left-click shows or hides the shelf. Right-click for **Start with Windows** and **Quit**.
+- **Never freezes on a dead drive:** whether a file still exists, and its icon, are looked up on background threads. A file on a network share that is switched off no longer freezes the shelf: its row looks normal until the answer arrives, then shows as "(not found)". A file that disappears is noticed within a few seconds.
 - **Resize:** drag the left edge of the open shelf to make it wider or narrower (240 to 640 px, and never more than half the screen). It remembers the width. On a narrower screen it shrinks to fit and goes back to your width on a bigger one.
 - **Fits your screen:** the shelf shrinks on short screens so it is never cut off, and it re-checks the screen every couple of seconds and every time it opens, so docking a laptop, changing resolution or scaling, or moving the taskbar does not leave it off-screen.
 - **One copy at a time:** starting Quick Shelf again (for example from the Start menu while it is already in the tray) does not open a second one. The copy that is already running slides the shelf open and the new one exits. It uses a port on this computer only (47831), and if another program owns that port Quick Shelf still runs.
@@ -84,4 +85,5 @@ git push origin v0.2.0
 - [x] Day 14: select several items (Ctrl/Shift-click, Ctrl+A) to open, pin, copy paths, remove or drag out together
 - [x] Day 15: tidy-up menu: sort A-Z (natural order), folders first, remove missing items, undo
 - [x] Day 16: drag the left edge to resize the shelf; the width is remembered
+- [x] Day 17: file status and icons are looked up in the background, so a dead network drive cannot freeze the shelf
 - [ ] Later: named groups, a real installer (needs WiX), code signing
