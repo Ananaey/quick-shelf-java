@@ -13,36 +13,45 @@ import java.util.List;
 
 /**
  * Saves the shelf as plain text: one path per line, UTF-8, lines starting with # are comments.
- * A pinned item has "[pinned] " in front of its path. Older files without any marker load as
- * unpinned. No libraries needed, and the file is easy to read or fix by hand.
+ * A pinned item has "[pinned] " in front of its path. A display name the user gave an item follows
+ * the path after a tab. Older files without any marker load as unpinned and unnamed. No libraries
+ * needed, and the file is easy to read or fix by hand.
  */
 public final class ShelfStorage {
     static final String HEADER = "# Quick Shelf - one path per line, [pinned] in front for pinned items";
     static final String PINNED_MARKER = "[pinned]";
 
-    /** One saved line: a path and whether it is pinned. */
+    /** One saved line: a path, whether it is pinned, and the display name the user gave it (or ""). */
     public static final class Entry {
         public final Path path;
         public final boolean pinned;
+        public final String label;
 
         public Entry(Path path, boolean pinned) {
+            this(path, pinned, "");
+        }
+
+        public Entry(Path path, boolean pinned, String label) {
             this.path = path;
             this.pinned = pinned;
+            this.label = ShelfItem.cleanLabel(label);
         }
 
         @Override
         public boolean equals(Object other) {
-            return other instanceof Entry && ((Entry) other).path.equals(path) && ((Entry) other).pinned == pinned;
+            return other instanceof Entry && ((Entry) other).path.equals(path)
+                    && ((Entry) other).pinned == pinned && ((Entry) other).label.equals(label);
         }
 
         @Override
         public int hashCode() {
-            return path.hashCode() * 31 + (pinned ? 1 : 0);
+            return (path.hashCode() * 31 + (pinned ? 1 : 0)) * 31 + label.hashCode();
         }
 
+        /** The line as it is written to the file: [pinned] path, then a tab and the name if there is one. */
         @Override
         public String toString() {
-            return (pinned ? PINNED_MARKER + " " : "") + path;
+            return (pinned ? PINNED_MARKER + " " : "") + path + (label.isEmpty() ? "" : "\t" + label);
         }
     }
 
@@ -101,11 +110,18 @@ public final class ShelfStorage {
             if (pinned) {
                 text = text.substring(PINNED_MARKER.length()).strip();
             }
+            // After the path, a tab and then the display name the user gave the item.
+            String label = "";
+            int tab = text.indexOf('\t');
+            if (tab >= 0) {
+                label = text.substring(tab + 1);
+                text = text.substring(0, tab).strip();
+            }
             if (text.isEmpty()) {
                 continue; // a marker with no path: an empty path would mean the current folder
             }
             try {
-                entries.add(new Entry(Path.of(text), pinned));
+                entries.add(new Entry(Path.of(text), pinned, label));
             } catch (InvalidPathException e) {
                 // skip a damaged line, keep the rest
             }
