@@ -116,6 +116,18 @@ public class PinningTest {
         check("pinned items are always first", pinnedFirst);
         equal("pinning f and b from a plain list puts b before f", "BFacde", spec(result));
 
+        // ---- display names survive pinning and reordering ----
+        ShelfItem labelled = new ShelfItem(Path.of("shelf-test", "a"), false, "Alpha");
+        List<ShelfItem> withLabels = List.of(labelled, item("b"), item("c"));
+        check("pinning one item keeps its name",
+                Pinning.toggled(withLabels, labelled).get(0).getLabel().equals("Alpha")
+                        && Pinning.toggled(withLabels, labelled).get(0).isPinned());
+        check("pinning several keeps their names", Pinning.withPinned(withLabels, List.of(labelled, item("c")), true).stream()
+                .anyMatch(it -> it.getLabel().equals("Alpha") && it.isPinned()));
+        check("unpinning keeps the name", !Pinning.toggled(Pinning.toggled(withLabels, labelled), labelled).get(0).isPinned()
+                && Pinning.toggled(Pinning.toggled(withLabels, labelled), labelled).get(0).getLabel().equals("Alpha"));
+        check("normalising keeps the names", Pinning.normalized(withLabels).get(0).getLabel().equals("Alpha"));
+
         // ---- groups ----
         List<ShelfItem> mixed = items("ABcde");
         check("pinned group bounds", java.util.Arrays.equals(new int[] {0, 1}, Pinning.groupBounds(mixed, 1)));

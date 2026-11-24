@@ -93,6 +93,21 @@ public class ShelfSortTest {
                 names(ShelfSort.byName(List.of(item("c"), item("a"), item("b")))),
                 names(ShelfSort.byName(ShelfSort.byName(List.of(item("c"), item("a"), item("b"))))));
 
+        // ---- sorting follows the display name, the way the list shows it ----
+        ShelfItem zebraAsAlpha = new ShelfItem(Path.of("sort-test", "zebra.txt"), false, "Alpha");
+        ShelfItem plainApple = item("apple.txt");
+        ShelfItem mangoAsZulu = new ShelfItem(Path.of("sort-test", "mango.txt"), false, "Zulu");
+        List<String> shown = new ArrayList<>();
+        for (ShelfItem sorted : ShelfSort.byName(List.of(mangoAsZulu, plainApple, zebraAsAlpha))) {
+            shown.add(sorted.getDisplayName());
+        }
+        equal("items are sorted by the name shown on screen", List.of("Alpha", "apple.txt", "Zulu"), shown);
+        List<String> labelsKept = new ArrayList<>();
+        for (ShelfItem sorted : ShelfSort.byName(List.of(mangoAsZulu, zebraAsAlpha))) {
+            labelsKept.add(sorted.getLabel() + "/" + sorted.getName());
+        }
+        equal("sorting keeps each item's own name", List.of("Alpha/zebra.txt", "Zulu/mango.txt"), labelsKept);
+
         // ---- folders first (needs real folders) ----
         Path dir = Files.createTempDirectory("shelf-sort-test");
         ShelfItem folderB = new ShelfItem(Files.createDirectory(dir.resolve("b-folder")));

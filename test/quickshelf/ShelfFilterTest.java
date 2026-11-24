@@ -26,6 +26,17 @@ public class ShelfFilterTest {
         check("extra spaces between words are fine", ShelfFilter.matches(report, "  work    final "));
         check("matches the extension", ShelfFilter.matches(budget, ".xlsx"));
 
+        // ---- items with a display name are found by it, and by their real name ----
+        ShelfItem named = new ShelfItem(Path.of("Work", "Q3_final_v7.xlsx"), false, "Budget");
+        check("found by the name given to it", ShelfFilter.matches(named, "budget"));
+        check("found by part of that name, ignoring case", ShelfFilter.matches(named, "BUDG"));
+        check("still found by its real file name", ShelfFilter.matches(named, "q3_final"));
+        check("still found by its folder", ShelfFilter.matches(named, "work"));
+        check("words can come from the name and the file name", ShelfFilter.matches(named, "budget q3_final"));
+        check("a word that is in neither does not match", !ShelfFilter.matches(named, "payroll"));
+        check("one missing word fails the match", !ShelfFilter.matches(named, "budget payroll"));
+        check("an item without a display name is unaffected", !ShelfFilter.matches(new ShelfItem(Path.of("Work", "x.txt")), "budget"));
+
         TestRunner.finish();
     }
 }

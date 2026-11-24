@@ -82,7 +82,7 @@ public final class ShelfSort {
 
     private static Comparator<ShelfItem> byNameThenPath() {
         return (x, y) -> {
-            int byName = naturalCompare(x.getName(), y.getName());
+            int byName = naturalCompare(x.getDisplayName(), y.getDisplayName()); // as shown on screen
             return byName != 0 ? byName : x.getPath().toString().compareTo(y.getPath().toString());
         };
     }
