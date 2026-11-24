@@ -10,19 +10,29 @@ import java.util.Set;
 
 /**
  * One file or folder on the shelf. Plain Java, no Swing.
- * Two items are the same item if they have the same path; whether one is pinned does not matter.
+ * Two items are the same item if they have the same path; whether one is pinned, or has a
+ * display name of its own, does not matter.
  */
 public final class ShelfItem {
+    /** The longest display name that is kept. */
+    public static final int MAX_LABEL = 80;
+
     private final Path path;
     private final boolean pinned;
+    private final String label;
 
     public ShelfItem(Path path) {
-        this(path, false);
+        this(path, false, "");
     }
 
     public ShelfItem(Path path, boolean pinned) {
+        this(path, pinned, "");
+    }
+
+    public ShelfItem(Path path, boolean pinned, String label) {
         this.path = path.toAbsolutePath().normalize();
         this.pinned = pinned;
+        this.label = cleanLabel(label);
     }
 
     public Path getPath() {
@@ -34,9 +44,60 @@ public final class ShelfItem {
         return pinned;
     }
 
-    /** The same item, pinned or not. Returns this when nothing changes. */
+    /** The same item, pinned or not (and keeping its display name). Returns this when nothing changes. */
     public ShelfItem withPinned(boolean value) {
-        return value == pinned ? this : new ShelfItem(path, value);
+        return value == pinned ? this : new ShelfItem(path, value, label);
+    }
+
+    /** The name the user gave this item, or an empty string. */
+    public String getLabel() {
+        return label;
+    }
+
+    public boolean hasLabel() {
+        return !label.isEmpty();
+    }
+
+    /** The same item with another display name; an empty name goes back to the file name. */
+    public ShelfItem withLabel(String text) {
+        String cleaned = cleanLabel(text);
+        return cleaned.equals(label) ? this : new ShelfItem(path, pinned, cleaned);
+    }
+
+    /**
+     * Makes a display name safe to show and to save: control characters (including tabs and line
+     * breaks, which the save file uses to separate things) become spaces, runs of spaces become one,
+     * the ends are trimmed, and it is cut to {@link #MAX_LABEL} characters.
+     */
+    public static String cleanLabel(String text) {
+        if (text == null) {
+            return "";
+        }
+        StringBuilder cleaned = new StringBuilder();
+        boolean lastWasSpace = true; // drops leading spaces
+        for (int i = 0; i < text.length() && cleaned.length() < MAX_LABEL; i++) {
+            char c = text.charAt(i);
+            boolean space = Character.isWhitespace(c) || Character.isISOControl(c);
+            if (space) {
+                if (!lastWasSpace) {
+                    cleaned.append(' ');
+                }
+                lastWasSpace = true;
+            } else {
+                cleaned.append(c);
+                lastWasSpace = false;
+            }
+        }
+        // Cutting at the limit must not split a character made of two chars (an emoji, for example).
+        if (cleaned.length() > 0 && Character.isHighSurrogate(cleaned.charAt(cleaned.length() - 1))) {
+            cleaned.setLength(cleaned.length() - 1);
+        }
+        return cleaned.toString().stripTrailing();
+    }
+
+    /** What the list shows: the name the user gave it, otherwise the file or folder name. */
+    public String getDisplayName() {
+        return hasLabel() ? label : getName();
     }
 
     /** Display name. Drive roots like C:\ have no file name, so the full path is used. */
