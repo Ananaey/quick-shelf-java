@@ -18,6 +18,7 @@ Java is already bundled, so you do not need to install anything. The app is not 
 
 - **Add:** drag files or folders from Explorer onto the open shelf.
 - **Open:** double-click an item, or select it and press Enter.
+- **Rename:** select an item and press **F2** (or right-click, **Rename...**) to give it a short display name of your own, such as "Budget" for `Q3_final_v7.xlsx`. Only the name on the shelf changes: the file itself is never renamed. Leave the box empty to go back to the file name. Search finds an item by either name, and sorting follows the name you see.
 - **Tidy up:** the ⋮ button in the header (or a right-click on the empty space below the items) has **Sort A-Z** (numbers count by value, so `file2` comes before `file10`), **Folders first**, **Remove N missing items** (files that no longer exist), and **Undo** for the last one of those. Pinned items always stay on top. These are switched off while a search is active.
 - **Select several:** Ctrl-click or Shift-click to pick more than one item, or press Ctrl+A for all of them. Then Enter opens them all (up to 10 at once), Delete removes them, and the right-click menu can copy all their paths (one per line), pin or unpin them together, or remove them. Dragging out takes the whole selection.
 - **Drag out:** drag an item from the shelf into an email, a chat window or an Explorer folder. It is always copied, never moved, so your original file stays where it was.
@@ -32,7 +33,7 @@ Java is already bundled, so you do not need to install anything. The app is not 
 - **Fits your screen:** the shelf shrinks on short screens so it is never cut off, and it re-checks the screen every couple of seconds and every time it opens, so docking a laptop, changing resolution or scaling, or moving the taskbar does not leave it off-screen.
 - **One copy at a time:** starting Quick Shelf again (for example from the Start menu while it is already in the tray) does not open a second one. The copy that is already running slides the shelf open and the new one exits. It uses a port on this computer only (47831), and if another program owns that port Quick Shelf still runs.
 
-Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line, with `[pinned]` in front of pinned ones. Your theme choice and shelf width are in `settings.properties` in the same folder (delete that file to go back to following Windows and the default width).
+Your shelf is saved in `%APPDATA%\QuickShelf\shelf.txt`, one path per line, with `[pinned]` in front of pinned ones and your display name after the path (separated by a tab). Your theme choice and shelf width are in `settings.properties` in the same folder (delete that file to go back to following Windows and the default width).
 
 ## Run from source
 
@@ -86,4 +87,5 @@ git push origin v0.2.0
 - [x] Day 15: tidy-up menu: sort A-Z (natural order), folders first, remove missing items, undo
 - [x] Day 16: drag the left edge to resize the shelf; the width is remembered
 - [x] Day 17: file status and icons are looked up in the background, so a dead network drive cannot freeze the shelf
+- [x] Day 18: give items a display name of your own (F2 or right-click, Rename...)
 - [ ] Later: named groups, a real installer (needs WiX), code signing
