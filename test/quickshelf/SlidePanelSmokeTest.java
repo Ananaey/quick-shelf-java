@@ -291,6 +291,15 @@ public class SlidePanelSmokeTest {
             // Arrow, Enter and Delete in the list (the keys that used to do nothing)
             press(list, down, none);
             equal("Down in the list moves to the next row", 1, (int) onEdt(() -> keys.shelf().selectedRow()));
+            // F2 renames the selected row (the test answers the question, so no dialog opens)
+            onEdt(() -> {
+                keys.shelf().setNamePrompt(current -> "Renamed by F2");
+                return null;
+            });
+            press(list, java.awt.event.KeyEvent.VK_F2, none);
+            equal("F2 renames the selected row", "Renamed by F2", onEdt(() -> keys.shelf().displayNameAt(1)));
+            equal("and the file keeps its name", "two.txt", onEdt(() -> keys.shelf().items().get(1).getName()));
+
             press(list, enter, none);
             equal("Enter in the list opens the selected item", 2, launched.size());
             equal("it is the selected row", "two.txt", launched.get(1).getName());

@@ -455,6 +455,122 @@ public class ShelfViewTest {
         check("on start the lookups begin by themselves and find it missing", waitFor(() -> afterRestart.isMissingAt(0), 5000));
         check("bad rows give nothing", afterRestart.tooltipAt(9) == null && !afterRestart.isMissingAt(-1));
 
+        // ---- renaming (a display name; the file itself is never touched) ----
+        Path renameDir = Files.createDirectories(dir.resolve("rename"));
+        File r1 = Files.createFile(renameDir.resolve("Q3_final_v7.xlsx")).toFile();
+        File r2 = Files.createFile(renameDir.resolve("holiday.jpg")).toFile();
+        File r3 = Files.createFile(renameDir.resolve("notes.txt")).toFile();
+        Path renameStore = dir.resolve("rename-store").resolve("shelf.txt");
+        ShelfView rv = new ShelfView(renameStore);
+        rv.addFiles(Arrays.asList(r1, r2, r3));
+
+        equal("at first rows show the file name", "Q3_final_v7.xlsx", rv.displayNameAt(0));
+        check("a display name can be set", rv.setLabelAt(0, "Budget"));
+        equal("the row shows it", "Budget", rv.displayNameAt(0));
+        equal("the real file name is unchanged", "Q3_final_v7.xlsx", rv.items().get(0).getName());
+        check("the file on disk is untouched", Files.exists(renameDir.resolve("Q3_final_v7.xlsx")));
+        check("the same name again is not a change", !rv.setLabelAt(0, "Budget"));
+        equal("the name is saved", "Budget", new ShelfView(renameStore).displayNameAt(0));
+        equal("it comes back in the right row, with the right file", "Q3_final_v7.xlsx",
+                new ShelfView(renameStore).items().get(0).getName());
+
+        rv.setQuery("budget");
+        equal("search finds it by its display name", 1, rv.visibleItems().size());
+        rv.setQuery("q3_final");
+        equal("and by its real file name", 1, rv.visibleItems().size());
+        rv.setQuery("holiday");
+        equal("other items are found as before", List.of("holiday.jpg"), names(rv.visibleItems()));
+        rv.setQuery("");
+
+        check("an empty name goes back to the file name", rv.setLabelAt(0, ""));
+        equal("the row shows the file name again", "Q3_final_v7.xlsx", rv.displayNameAt(0));
+        check("and nothing is left in the save file", new ShelfView(renameStore).items().get(0).getLabel().isEmpty());
+        rv.setLabelAt(0, "Budget");
+
+        // the question: it offers the current name, and cancelling changes nothing
+        List<String> asked = new ArrayList<>();
+        rv.setNamePrompt(current -> {
+            asked.add(current);
+            return "Holiday pics";
+        });
+        check("Rename asks, then applies the answer", rv.renameAt(1));
+        equal("it offered the file name when there was no display name", "holiday.jpg", asked.get(0));
+        equal("and the answer is shown", "Holiday pics", rv.displayNameAt(1));
+        rv.setNamePrompt(current -> {
+            asked.add(current);
+            return null;
+        });
+        check("cancelling changes nothing", !rv.renameAt(1));
+        equal("the name stays", "Holiday pics", rv.displayNameAt(1));
+        equal("it offered the display name the second time", "Holiday pics", asked.get(1));
+        rv.setNamePrompt(current -> "   ");
+        check("an answer of only spaces clears the name", rv.renameAt(1));
+        equal("back to the file name", "holiday.jpg", rv.displayNameAt(1));
+        rv.setNamePrompt(current -> "x".repeat(300));
+        rv.renameAt(1);
+        equal("a very long answer is cut", ShelfItem.MAX_LABEL, rv.displayNameAt(1).length());
+        rv.setNamePrompt(current -> "two\nlines\tand tab");
+        rv.renameAt(1);
+        equal("line breaks and tabs are tidied away", "two lines and tab", rv.displayNameAt(1));
+        equal("so the save file still has one line per item", 3 + 1,
+                Files.readAllLines(renameStore).size()); // the header comment plus three items
+        equal("and it loads back the same", "two lines and tab", new ShelfView(renameStore).displayNameAt(1));
+        check("bad rows are refused", !rv.renameAt(9) && !rv.renameAt(-1) && !rv.setLabelAt(9, "x")
+                && !rv.setLabelAt(-1, "x") && rv.displayNameAt(9) == null && rv.displayNameAt(-1) == null);
+
+        // F2 is bound to renaming the selected item. (The real key press is tested in the window
+        // test; a key event sent to a list that is not on screen is dropped by Java's focus manager.)
+        javax.swing.Action f2 = rv.boundAction(java.awt.event.KeyEvent.VK_F2);
+        check("F2 is bound to an action", f2 != null);
+        rv.setNamePrompt(current -> "Notes");
+        rv.selectRows(2);
+        f2.actionPerformed(null);
+        equal("F2 renames the selected item", "Notes", rv.displayNameAt(2));
+        rv.setNamePrompt(current -> "Everything");
+        rv.selectRows(0, 1);
+        f2.actionPerformed(null);
+        check("F2 with several selected renames nothing", rv.displayNameAt(0).equals("Budget")
+                && rv.displayNameAt(1).equals("two lines and tab"));
+        check("renameSelected agrees", !rv.renameSelected());
+        rv.clearSelectionForTest();
+        check("F2 with nothing selected renames nothing", !rv.renameSelected());
+
+        // names go along with pinning, sorting and undo
+        rv.setLabelAt(0, "Zulu");   // so the names are NOT in A-Z order and a sort has work to do
+        rv.setLabelAt(1, "Budget");
+        rv.selectRows(2);
+        rv.togglePinSelected(); // Notes is pinned and goes to the top
+        equal("a pinned item keeps its name", "Notes", rv.displayNameAt(0));
+        equal("before sorting", List.of("Notes", "Zulu", "Budget"),
+                List.of(rv.displayNameAt(0), rv.displayNameAt(1), rv.displayNameAt(2)));
+        check("sort A-Z changes the order", rv.sortByName());
+        equal("sorted by the names shown, pinned first", List.of("Notes", "Budget", "Zulu"),
+                List.of(rv.displayNameAt(0), rv.displayNameAt(1), rv.displayNameAt(2)));
+        check("undo", rv.undoTidy());
+        equal("undo brings back the order with every name", List.of("Notes", "Zulu", "Budget"),
+                List.of(rv.displayNameAt(0), rv.displayNameAt(1), rv.displayNameAt(2)));
+        ShelfView restarted2 = new ShelfView(renameStore);
+        equal("a restart keeps names and pins together", List.of("Notes", "Zulu", "Budget"),
+                List.of(restarted2.displayNameAt(0), restarted2.displayNameAt(1), restarted2.displayNameAt(2)));
+        check("and the pin", restarted2.isPinnedAt(0) && !restarted2.isPinnedAt(1));
+        check("a used-up undo is gone", !rv.canUndoTidy());
+        check("sort A-Z again", rv.sortByName());
+        check("so a tidy-up can be undone", rv.canUndoTidy());
+        rv.setLabelAt(1, "Brand new");
+        check("but renaming afterwards makes that undo stale", !rv.canUndoTidy());
+
+        // a renamed item can be removed and added again, and then has no name
+        ShelfItem r1Item = new ShelfItem(r1.toPath());
+        int r1Row = rv.items().indexOf(r1Item);
+        check("the item for the first file is on the shelf with a name", r1Row >= 0 && rv.items().get(r1Row).hasLabel());
+        rv.selectRows(r1Row);
+        rv.removeSelected();
+        check("removed", !rv.items().contains(r1Item));
+        equal("adding it again works", 1, rv.addFiles(List.of(r1)));
+        ShelfItem addedAgain = rv.items().get(rv.items().size() - 1);
+        equal("it is the same file", r1Item, addedAgain);
+        check("and starts with its file name, not the old display name", !addedAgain.hasLabel());
+
         // ---- several items at once ----
         ShelfView multi = new ShelfView(dir.resolve("multi-store").resolve("shelf.txt"));
         List<File> made = new ArrayList<>();

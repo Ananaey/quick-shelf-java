@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
@@ -32,6 +33,7 @@ import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JList;
 import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
@@ -83,6 +85,7 @@ public class ShelfView extends JScrollPane {
     /** True for a path that is known not to exist. Unknown counts as "exists" until checked. */
     private transient AsyncCache<Path, Boolean> missing;
     private transient AsyncCache<Path, Icon> icons;
+    private transient UnaryOperator<String> namePrompt = this::askNameWithDialog;
     private transient PathOpener opener = new PathOpener();
     private transient Consumer<String> clipboard = ShelfView::copyToSystemClipboard;
     private final transient ShelfStorage storage;
@@ -150,6 +153,7 @@ public class ShelfView extends JScrollPane {
         });
         bindKey(KeyEvent.VK_ENTER, "open", this::openSelected);
         bindKey(KeyEvent.VK_DELETE, "remove", this::removeSelected);
+        bindKey(KeyEvent.VK_F2, "rename", this::renameSelected);
 
         loadSaved();
     }
@@ -233,9 +237,67 @@ public class ShelfView extends JScrollPane {
         return list.getSelectedIndex();
     }
 
+    /** The action a key (without modifiers) runs while the keyboard is in the list, or null (used by tests). */
+    javax.swing.Action boundAction(int keyCode) {
+        Object name = list.getInputMap().get(KeyStroke.getKeyStroke(keyCode, 0));
+        return name == null ? null : list.getActionMap().get(name);
+    }
+
     /** The component that receives key presses while the keyboard is in the list (used by tests). */
     Component keyTarget() {
         return list;
+    }
+
+    /**
+     * Asks for a display name for the item at a displayed row and applies it. Returns false if the
+     * row is not valid, the question was cancelled, or the name did not change. An empty answer
+     * goes back to the file name.
+     */
+    boolean renameAt(int index) {
+        if (index < 0 || index >= shown.size()) {
+            return false;
+        }
+        ShelfItem item = shown.get(index);
+        String answer = namePrompt.apply(item.hasLabel() ? item.getLabel() : item.getName());
+        return answer != null && setLabelAt(index, answer);
+    }
+
+    /** Renames the selected item (F2). Only when exactly one item is selected. */
+    boolean renameSelected() {
+        return selectedCount() == 1 && renameAt(list.getSelectedIndex());
+    }
+
+    /** Gives the item at a displayed row a display name ("" for none). The file itself is untouched. */
+    boolean setLabelAt(int index, String text) {
+        if (index < 0 || index >= shown.size()) {
+            return false;
+        }
+        ShelfItem item = shown.get(index);
+        ShelfItem renamed = item.withLabel(text);
+        if (renamed == item) {
+            return false; // same name as before
+        }
+        model.set(model.indexOf(item), renamed);
+        refresh();
+        persist();
+        return true;
+    }
+
+    /** What the displayed row shows as its name. */
+    String displayNameAt(int index) {
+        return index < 0 || index >= shown.size() ? null : shown.get(index).getDisplayName();
+    }
+
+    /** Replaces the question that asks for a name, so a test can answer it without a dialog. */
+    void setNamePrompt(UnaryOperator<String> prompt) {
+        this.namePrompt = prompt;
+    }
+
+    private String askNameWithDialog(String current) {
+        Object answer = JOptionPane.showInputDialog(SwingUtilities.getWindowAncestor(list),
+                "Name for this item (leave empty to use the file name):", "Rename",
+                JOptionPane.PLAIN_MESSAGE, null, null, current);
+        return answer == null ? null : answer.toString();
     }
 
     /** Puts the full path of the item at a displayed row on the clipboard. */
@@ -360,6 +422,10 @@ public class ShelfView extends JScrollPane {
     /** Selects the given displayed rows (used by tests). */
     void selectRows(int... rows) {
         list.setSelectedIndices(rows);
+    }
+
+    void clearSelectionForTest() {
+        list.clearSelection();
     }
 
     /**
@@ -541,7 +607,7 @@ public class ShelfView extends JScrollPane {
     private void loadSaved() {
         List<ShelfItem> loaded = new ArrayList<>();
         for (ShelfStorage.Entry entry : storage.loadEntries()) {
-            ShelfItem item = new ShelfItem(entry.path, entry.pinned);
+            ShelfItem item = new ShelfItem(entry.path, entry.pinned, entry.label);
             if (!loaded.contains(item)) {
                 loaded.add(item);
             }
@@ -600,7 +666,7 @@ public class ShelfView extends JScrollPane {
         undoSnapshot = null; // every change except a tidy-up makes an older undo stale
         List<ShelfStorage.Entry> entries = new ArrayList<>();
         for (ShelfItem item : items()) {
-            entries.add(new ShelfStorage.Entry(item.getPath(), item.isPinned()));
+            entries.add(new ShelfStorage.Entry(item.getPath(), item.isPinned(), item.getLabel()));
         }
         try {
             storage.saveEntries(entries);
@@ -665,6 +731,7 @@ public class ShelfView extends JScrollPane {
         menu.add(menuItem("Open", true, () -> openAt(index)));
         menu.add(menuItem("Show in folder", true, () -> showInFolderAt(index)));
         menu.add(menuItem("Copy path", true, () -> copyPathAt(index)));
+        menu.add(menuItem("Rename...", true, () -> renameAt(index)));
         menu.addSeparator();
         menu.add(menuItem(isPinnedAt(index) ? "Unpin" : "Pin to top", true, () -> togglePinAt(index)));
         // Moving stays inside the item's group, so the first and last rows of each group cannot move further.
@@ -773,7 +840,7 @@ public class ShelfView extends JScrollPane {
             ShelfItem item = (ShelfItem) value;
             pinned = item.isPinned();
             selectedRow = isSelected;
-            setText(item.getName());
+            setText(item.getDisplayName());
             setIcon(icons.get(item.getPath()));
             setIconTextGap(10);
             setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
