@@ -48,7 +48,8 @@ public class AsyncCacheTest {
         // ---- a value that is not known yet is answered at once, then arrives ----
         equal("an unknown key gives the placeholder", "?", cache.get("a"));
         check("the real value arrives in the background", eventually(() -> cache.get("a").equals("apple")));
-        equal("a change was announced", 1, changes.get());
+        // The value becomes visible a moment before the announcement, so wait for it too.
+        check("a change was announced", eventually(() -> changes.get() == 1));
         equal("one lookup was made", 1, loads.get());
 
         // ---- a trusted value is not looked up again ----
@@ -64,13 +65,18 @@ public class AsyncCacheTest {
         now.addAndGet(6_000);
         equal("a stale value is still answered immediately with the old one", "apple", cache.get("a"));
         check("and refreshed behind the scenes", eventually(() -> cache.get("a").equals("apricot")));
-        equal("the change was announced", 2, changes.get());
+        check("the change was announced", eventually(() -> changes.get() == 2));
         equal("one extra lookup", 2, loads.get());
 
         // ---- a refresh that finds the same value announces nothing ----
         now.addAndGet(6_000);
-        cache.get("a");
-        check("the refresh ran", eventually(() -> loads.get() == 3));
+        // Keep reading while waiting, as repainting does: a single read can land in the moment
+        // after the previous refresh stored its value but before it cleared its pending mark,
+        // and is then rightly treated as "already in progress".
+        check("the refresh ran", eventually(() -> {
+            cache.get("a");
+            return loads.get() == 3;
+        }));
         Thread.sleep(100);
         equal("an unchanged value is not announced again", 2, changes.get());
 
@@ -90,8 +96,10 @@ public class AsyncCacheTest {
         Thread.sleep(150);
         equal("a failure is not retried until the value goes stale", 5, loads.get());
         now.addAndGet(6_000);
-        cache.get("boom");
-        check("after that it is tried again", eventually(() -> loads.get() == 6));
+        check("after that it is tried again", eventually(() -> {
+            cache.get("boom");
+            return loads.get() == 6;
+        }));
         equal("a failure is never announced", 2, changes.get());
 
         // ---- the caller is never held up, however slow the lookup is ----
@@ -111,7 +119,7 @@ public class AsyncCacheTest {
         check("nothing has arrived yet", cache.get("b").equals("?"));
         gate.countDown();
         check("opening the gate lets the value arrive", eventually(() -> cache.get("b").equals("banana")));
-        equal("and it is announced", 3, changes.get());
+        check("and it is announced", eventually(() -> changes.get() == 3));
         useGate.set(0);
 
         // ---- many slow lookups at once do not hold up reads of other keys ----
@@ -160,6 +168,35 @@ public class AsyncCacheTest {
         check("the answers are right", single.get(19).equals("v19"));
         single.close();
 
+        // ---- many readers at once never cause the same key to be looked up twice ----
+        // A reader that finds no value can lose a race with the lookup finishing; it must notice
+        // the value that just arrived instead of starting a second lookup.
+        Map<Integer, AtomicInteger> perKey = new ConcurrentHashMap<>();
+        AsyncCache<Integer, Integer> raced = new AsyncCache<>(k -> {
+            perKey.computeIfAbsent(k, x -> new AtomicInteger()).incrementAndGet();
+            return k;
+        }, -1, now::get, 0, () -> { });
+        int keys = 1500;
+        Thread[] readers = new Thread[6];
+        for (int r = 0; r < readers.length; r++) {
+            readers[r] = new Thread(() -> {
+                for (int round = 0; round < 40; round++) {
+                    for (int k = 0; k < keys; k++) {
+                        raced.get(k);
+                    }
+                }
+            });
+            readers[r].start();
+        }
+        for (Thread reader : readers) {
+            reader.join();
+        }
+        check("every key was looked up", eventually(() -> perKey.size() == keys));
+        int most = perKey.values().stream().mapToInt(AtomicInteger::get).max().orElse(0);
+        long twice = perKey.values().stream().filter(c -> c.get() > 1).count();
+        equal("no key was looked up more than once (" + twice + " were)", 1, most);
+        raced.close();
+
         // ---- no refresh when the time to live is zero ----
         AtomicInteger forever = new AtomicInteger();
         AsyncCache<String, String> never = new AsyncCache<>(k -> {
@@ -177,16 +214,19 @@ public class AsyncCacheTest {
         never.close();
 
         // ---- the cache cannot grow without limit ----
-        AsyncCache<Integer, Integer> big = new AsyncCache<>(k -> k, -1, now::get, 0, () -> { });
+        // Every load ends with the change callback, after the value is stored and the cache trimmed,
+        // so counting callbacks tells when all 5000 are completely done. (Checking after a fixed
+        // pause could catch the cache between storing a value and trimming, a few entries over.)
+        AtomicInteger stored = new AtomicInteger();
+        AsyncCache<Integer, Integer> big = new AsyncCache<>(k -> k, -1, now::get, 0, stored::incrementAndGet);
         for (int i = 0; i < 5000; i++) {
             big.get(i);
             if (i % 100 == 0) {
                 now.incrementAndGet(); // later entries are newer
             }
         }
-        check("everything is looked up", eventually(() -> big.size() > 0));
-        Thread.sleep(500);
-        check("the size stays bounded (" + big.size() + ")", big.size() <= 2000);
+        check("all 5000 lookups finish", eventually(() -> stored.get() == 5000));
+        check("the size stays bounded once they are done (" + big.size() + ")", big.size() <= 2000);
         big.close();
 
         // ---- after close nothing breaks ----
