@@ -17,6 +17,7 @@ Java is already bundled, so you do not need to install anything. The app is not 
 ## Use
 
 - **Add:** drag files or folders from Explorer onto the open shelf.
+- **Paste:** copy files in Explorer (Ctrl+C), then click the shelf list and press **Ctrl+V** (or use **Paste from clipboard** in the menu). Text with one path per line works too, including Windows' "Copy as path". Paths that do not exist, and relative paths, are skipped. The clipboard is only read when you paste.
 - **Open:** double-click an item, or select it and press Enter.
 - **Rename:** select an item and press **F2** (or right-click, **Rename...**) to give it a short display name of your own, such as "Budget" for `Q3_final_v7.xlsx`. Only the name on the shelf changes: the file itself is never renamed. Leave the box empty to go back to the file name. Search finds an item by either name, and sorting follows the name you see.
 - **Tidy up:** the ⋮ button in the header (or a right-click on the empty space below the items) has **Sort A-Z** (numbers count by value, so `file2` comes before `file10`), **Folders first**, **Remove N missing items** (files that no longer exist), and **Undo** for the last one of those. Pinned items always stay on top. These are switched off while a search is active.
@@ -88,4 +89,5 @@ git push origin v0.2.0
 - [x] Day 16: drag the left edge to resize the shelf; the width is remembered
 - [x] Day 17: file status and icons are looked up in the background, so a dead network drive cannot freeze the shelf
 - [x] Day 18: give items a display name of your own (F2 or right-click, Rename...)
+- [x] Day 19: paste files or paths from the clipboard (Ctrl+V or the menu)
 - [ ] Later: named groups, a real installer (needs WiX), code signing
