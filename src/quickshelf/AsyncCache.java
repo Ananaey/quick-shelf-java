@@ -79,10 +79,14 @@ final class AsyncCache<K, V> implements AutoCloseable {
             schedule(key);
             return unknown;
         }
-        if (ttlMillis > 0 && clock.getAsLong() - entry.at >= ttlMillis) {
+        if (isStale(entry)) {
             schedule(key); // stale: answer with the old value now, refresh in the background
         }
         return entry.value;
+    }
+
+    private boolean isStale(Entry<V> entry) {
+        return ttlMillis > 0 && clock.getAsLong() - entry.at >= ttlMillis;
     }
 
     int size() {
@@ -97,6 +101,14 @@ final class AsyncCache<K, V> implements AutoCloseable {
     private void schedule(K key) {
         if (!pending.add(key)) {
             return; // already being worked out: one lookup per key at a time
+        }
+        // The caller decided to schedule because it saw no value (or a stale one). A lookup may
+        // have finished in between: it stores its value before it clears its pending mark, so a
+        // fresh value is visible now if that happened. Then there is nothing to do.
+        Entry<V> current = entries.get(key);
+        if (current != null && !isStale(current)) {
+            pending.remove(key);
+            return;
         }
         try {
             workers.execute(() -> load(key));
