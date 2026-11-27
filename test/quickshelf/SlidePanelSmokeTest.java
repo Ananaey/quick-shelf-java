@@ -316,6 +316,16 @@ public class SlidePanelSmokeTest {
             press(list, java.awt.event.KeyEvent.VK_DELETE, none);
             equal("Delete removes the whole selection", 0, (int) onEdt(() -> keys.shelf().items().size()));
 
+            // Ctrl+V pastes files (from a stand-in clipboard, so the real one is never touched)
+            java.io.File pasted = Files.createFile(files.resolve("pasted.txt")).toFile();
+            onEdt(() -> {
+                keys.shelf().setClipboardSource(() -> new FileTransferable(pasted));
+                return null;
+            });
+            press(list, java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK);
+            equal("Ctrl+V in the list pastes the copied file", 1, (int) onEdt(() -> keys.shelf().items().size()));
+            equal("it is the right one", "pasted.txt", onEdt(() -> keys.shelf().items().get(0).getName()));
+
             // Ctrl+F selects the search text, even with the keyboard in the list
             onEdt(() -> {
                 keys.search().setText("hello");

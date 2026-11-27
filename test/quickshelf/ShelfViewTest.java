@@ -308,12 +308,13 @@ public class ShelfViewTest {
         File tA = Files.createFile(tidyDir.resolve("a.txt")).toFile();
         ShelfView tidy2 = new ShelfView(tidyStore);
 
-        check("a menu on an empty shelf has nothing to sort", menuLabels(tidy2.buildTidyMenu())
-                .equals(List.of("Sort A-Z (off)", "Folders first (off)", "No missing items (off)", "Undo (off)")));
+        equal("a menu on an empty shelf can only paste", List.of("Paste from clipboard",
+                "Sort A-Z (off)", "Folders first (off)", "No missing items (off)", "Undo (off)"), menuLabels(tidy2.buildTidyMenu()));
         tidy2.addFiles(Arrays.asList(t10, tFolder, t2, tA));
         equal("added in this order", List.of("file10.txt", "zdir", "file2.txt", "a.txt"), names(tidy2));
         equal("the menu offers sorting once there is something to sort",
-                List.of("Sort A-Z", "Folders first", "No missing items (off)", "Undo (off)"), menuLabels(tidy2.buildTidyMenu()));
+                List.of("Paste from clipboard", "Sort A-Z", "Folders first", "No missing items (off)", "Undo (off)"),
+                menuLabels(tidy2.buildTidyMenu()));
 
         check("sort A-Z changes the order", tidy2.sortByName());
         equal("numbers count by value and folders are sorted with the rest",
@@ -381,14 +382,15 @@ public class ShelfViewTest {
         tidy2.setQuery("a.txt");
         check("sorting is off while searching", !tidy2.sortByName() && !tidy2.sortFoldersFirst());
         equal("so is removing missing items", 0, tidy2.removeMissing());
-        equal("the menu says so", List.of("Sort A-Z (off)", "Folders first (off)", "Remove 3 missing items (off)", "Undo (off)"),
+        equal("the menu says so (paste still works while searching)",
+                List.of("Paste from clipboard", "Sort A-Z (off)", "Folders first (off)", "Remove 3 missing items (off)", "Undo (off)"),
                 menuLabels(tidy2.buildTidyMenu()));
         tidy2.setQuery("");
 
         // a one-item shelf has nothing to sort
         ShelfView single = new ShelfView(dir.resolve("single-store").resolve("shelf.txt"));
         single.addFiles(List.of(tA));
-        check("one item cannot be sorted", menuLabels(single.buildTidyMenu()).get(0).equals("Sort A-Z (off)"));
+        check("one item cannot be sorted", menuLabels(single.buildTidyMenu()).contains("Sort A-Z (off)"));
 
         // ---- a file on a dead drive must never freeze the list ----
         Path slowDir = Files.createDirectories(dir.resolve("slow"));
@@ -435,7 +437,8 @@ public class ShelfViewTest {
         gate.countDown();
         check("when the drive finally answers, the row shows as missing", waitFor(() -> slowView.isMissingAt(0), 5000));
         check("with the usual tooltip", slowView.tooltipAt(0).endsWith("(not found)"));
-        check("and a repaint was requested", repaints.get() >= 1);
+        // the value is visible a moment before the repaint is requested, so wait for that too
+        check("and a repaint was requested", waitFor(() -> repaints.get() >= 1, 5000));
 
         // the real lookups: a file that disappears is noticed within a few seconds
         File realFile = Files.createFile(slowDir.resolve("real.txt")).toFile();
@@ -454,6 +457,76 @@ public class ShelfViewTest {
         ShelfView afterRestart = new ShelfView(goneStore);
         check("on start the lookups begin by themselves and find it missing", waitFor(() -> afterRestart.isMissingAt(0), 5000));
         check("bad rows give nothing", afterRestart.tooltipAt(9) == null && !afterRestart.isMissingAt(-1));
+
+        // ---- pasting from the clipboard (a stand-in clipboard: the real one is never touched) ----
+        Path pasteDir = Files.createDirectories(dir.resolve("paste"));
+        File pa = Files.createFile(pasteDir.resolve("copied in explorer.txt")).toFile();
+        File pb = Files.createFile(pasteDir.resolve("second.txt")).toFile();
+        File pc = Files.createFile(pasteDir.resolve("as text.txt")).toFile();
+        Path pasteStore = dir.resolve("paste-store").resolve("shelf.txt");
+        ShelfView pv = new ShelfView(pasteStore);
+        java.util.concurrent.atomic.AtomicReference<java.awt.datatransfer.Transferable> fakeClipboard =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger clipboardReads = new java.util.concurrent.atomic.AtomicInteger();
+        pv.setClipboardSource(() -> {
+            clipboardReads.incrementAndGet();
+            return fakeClipboard.get();
+        });
+
+        pv.buildTidyMenu();
+        equal("showing the menu does not read the clipboard", 0, clipboardReads.get());
+        equal("an empty clipboard pastes nothing", 0, pv.pasteFromClipboard());
+        equal("it was read once, when pasting", 1, clipboardReads.get());
+
+        fakeClipboard.set(new FileTransferable(pa, pb));
+        equal("files copied in Explorer are pasted", 2, pv.pasteFromClipboard());
+        equal("in the order they were copied", List.of("copied in explorer.txt", "second.txt"), names(pv));
+        equal("pasting the same files again adds nothing", 0, pv.pasteFromClipboard());
+        equal("and they were saved", 2, new ShelfView(pasteStore).items().size());
+
+        Path missingPath = pasteDir.resolve("never existed.txt");
+        fakeClipboard.set(new java.awt.datatransfer.StringSelection(
+                "\"" + pc.getAbsolutePath() + "\"\r\n\"" + missingPath + "\"\r\nsome words\r\n\r\n"));
+        equal("Copy-as-path text pastes the paths that exist", 1, pv.pasteFromClipboard());
+        equal("so only the real file was added", "as text.txt", names(pv).get(2));
+        fakeClipboard.set(new java.awt.datatransfer.StringSelection("just a sentence, no paths"));
+        equal("text without paths pastes nothing", 0, pv.pasteFromClipboard());
+        equal("and the shelf is unchanged", 3, pv.items().size());
+
+        // the keyboard and the menu both reach it
+        javax.swing.Action ctrlV = pv.boundAction(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK);
+        check("Ctrl+V is bound in the list", ctrlV != null);
+        check("plain V is not", pv.boundAction(java.awt.event.KeyEvent.VK_V) == null);
+        File pd = Files.createFile(pasteDir.resolve("by keyboard.txt")).toFile();
+        fakeClipboard.set(new FileTransferable(pd));
+        ctrlV.actionPerformed(null);
+        check("Ctrl+V pastes", names(pv).contains("by keyboard.txt"));
+        File pe = Files.createFile(pasteDir.resolve("by menu.txt")).toFile();
+        fakeClipboard.set(new FileTransferable(pe));
+        clickMenuItem(pv.buildTidyMenu(), "Paste from clipboard");
+        check("the menu entry pastes", names(pv).contains("by menu.txt"));
+
+        // pasting while a search is active still adds, even if the new item is hidden by the search
+        pv.setQuery("second");
+        File pf = Files.createFile(pasteDir.resolve("hidden by search.txt")).toFile();
+        fakeClipboard.set(new FileTransferable(pf));
+        equal("a paste while searching still adds", 1, pv.pasteFromClipboard());
+        equal("the search still shows only its match", List.of("second.txt"), names(pv.visibleItems()));
+        pv.setQuery("");
+        check("the pasted item is there once the search is cleared", names(pv).contains("hidden by search.txt"));
+        check("a paste forgets an old tidy-up undo", !pv.canUndoTidy());
+
+        // a clipboard that is busy (another program holds it) is simply empty
+        pv.setClipboardSource(() -> {
+            throw new IllegalStateException("clipboard is in use");
+        });
+        boolean crashed = false;
+        try {
+            pv.pasteFromClipboard();
+        } catch (RuntimeException problem) {
+            crashed = true;
+        }
+        check("a clipboard that cannot be read does not crash", !crashed);
 
         // ---- renaming (a display name; the file itself is never touched) ----
         Path renameDir = Files.createDirectories(dir.resolve("rename"));

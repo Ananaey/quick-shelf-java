@@ -13,6 +13,7 @@ import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.Transferable;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
+import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -24,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -86,6 +88,8 @@ public class ShelfView extends JScrollPane {
     private transient AsyncCache<Path, Boolean> missing;
     private transient AsyncCache<Path, Icon> icons;
     private transient UnaryOperator<String> namePrompt = this::askNameWithDialog;
+    /** Where Paste reads from. Only read when the user pastes, never just to show a menu. */
+    private transient Supplier<Transferable> clipboardSource = ShelfView::readSystemClipboard;
     private transient PathOpener opener = new PathOpener();
     private transient Consumer<String> clipboard = ShelfView::copyToSystemClipboard;
     private final transient ShelfStorage storage;
@@ -154,6 +158,7 @@ public class ShelfView extends JScrollPane {
         bindKey(KeyEvent.VK_ENTER, "open", this::openSelected);
         bindKey(KeyEvent.VK_DELETE, "remove", this::removeSelected);
         bindKey(KeyEvent.VK_F2, "rename", this::renameSelected);
+        bindKey(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK, "paste", this::pasteFromClipboard);
 
         loadSaved();
     }
@@ -239,7 +244,12 @@ public class ShelfView extends JScrollPane {
 
     /** The action a key (without modifiers) runs while the keyboard is in the list, or null (used by tests). */
     javax.swing.Action boundAction(int keyCode) {
-        Object name = list.getInputMap().get(KeyStroke.getKeyStroke(keyCode, 0));
+        return boundAction(keyCode, 0);
+    }
+
+    /** The action a key with modifiers (such as Ctrl) runs while the keyboard is in the list, or null. */
+    javax.swing.Action boundAction(int keyCode, int modifiers) {
+        Object name = list.getInputMap().get(KeyStroke.getKeyStroke(keyCode, modifiers));
         return name == null ? null : list.getActionMap().get(name);
     }
 
@@ -298,6 +308,38 @@ public class ShelfView extends JScrollPane {
                 "Name for this item (leave empty to use the file name):", "Rename",
                 JOptionPane.PLAIN_MESSAGE, null, null, current);
         return answer == null ? null : answer.toString();
+    }
+
+    /**
+     * Adds what is on the clipboard: files copied in Explorer, or text with one path per line
+     * (Windows' "Copy as path" works). Returns how many new items were added; paths that do not
+     * exist and items already on the shelf are skipped.
+     */
+    int pasteFromClipboard() {
+        Transferable contents;
+        try {
+            contents = clipboardSource.get();
+        } catch (RuntimeException e) {
+            contents = null; // the clipboard could not be read (busy, or no display): nothing to paste
+        }
+        List<File> files = new ArrayList<>();
+        for (Path path : ClipboardPaths.fromTransferable(contents)) {
+            files.add(path.toFile());
+        }
+        return files.isEmpty() ? 0 : addFiles(files);
+    }
+
+    /** Replaces where Paste reads from, so a test never touches the real clipboard. */
+    void setClipboardSource(Supplier<Transferable> source) {
+        this.clipboardSource = source;
+    }
+
+    private static Transferable readSystemClipboard() {
+        try {
+            return Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null);
+        } catch (HeadlessException | IllegalStateException e) {
+            return null; // no clipboard, or another program is holding it
+        }
     }
 
     /** Puts the full path of the item at a displayed row on the clipboard. */
@@ -576,6 +618,8 @@ public class ShelfView extends JScrollPane {
     /** The menu with sorting, clean-up and undo. */
     JPopupMenu buildTidyMenu() {
         JPopupMenu menu = new JPopupMenu();
+        menu.add(menuItem("Paste from clipboard", true, this::pasteFromClipboard));
+        menu.addSeparator();
         boolean canSort = !isSearching() && model.size() > 1;
         int missing = missingCount();
         menu.add(menuItem("Sort A-Z", canSort, this::sortByName));
@@ -765,7 +809,11 @@ public class ShelfView extends JScrollPane {
     }
 
     private void bindKey(int keyCode, String name, Runnable action) {
-        list.getInputMap().put(KeyStroke.getKeyStroke(keyCode, 0), name);
+        bindKey(keyCode, 0, name, action);
+    }
+
+    private void bindKey(int keyCode, int modifiers, String name, Runnable action) {
+        list.getInputMap().put(KeyStroke.getKeyStroke(keyCode, modifiers), name);
         list.getActionMap().put(name, new AbstractAction() {
             private static final long serialVersionUID = 1L;
 
