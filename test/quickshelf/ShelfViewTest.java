@@ -321,26 +321,26 @@ public class ShelfViewTest {
                 List.of("a.txt", "file2.txt", "file10.txt", "zdir"), names(tidy2));
         equal("the new order was saved", List.of("a.txt", "file2.txt", "file10.txt", "zdir"),
                 names(new ShelfView(tidyStore)));
-        check("undo is now possible", tidy2.canUndoTidy());
-        check("and offered in the menu", menuLabels(tidy2.buildTidyMenu()).contains("Undo"));
+        check("undo is now possible", tidy2.canUndo());
+        check("and offered in the menu", menuLabels(tidy2.buildTidyMenu()).contains("Undo Sort A-Z"));
         check("sorting an already sorted shelf changes nothing", !tidy2.sortByName());
-        check("and does not throw away the earlier undo", tidy2.canUndoTidy());
+        check("and does not throw away the earlier undo", tidy2.canUndo());
 
-        check("undo puts the old order back", tidy2.undoTidy());
+        check("undo puts the old order back", tidy2.undo());
         equal("the original order is back", List.of("file10.txt", "zdir", "file2.txt", "a.txt"), names(tidy2));
         equal("and saved", List.of("file10.txt", "zdir", "file2.txt", "a.txt"), names(new ShelfView(tidyStore)));
-        check("undo works once", !tidy2.canUndoTidy() && !tidy2.undoTidy());
+        check("undo works once", !tidy2.canUndo() && !tidy2.undo());
 
         check("folders first", tidy2.sortFoldersFirst());
         equal("the folder moves up and the files follow A-Z",
                 List.of("zdir", "a.txt", "file2.txt", "file10.txt"), names(tidy2));
-        check("any other change makes the old undo stale", tidy2.canUndoTidy());
+        check("any other change makes the old undo stale", tidy2.canUndo());
         File tNew = Files.createFile(tidyDir.resolve("new.txt")).toFile();
         tidy2.addFiles(List.of(tNew));
-        check("adding a file forgets the undo", !tidy2.canUndoTidy());
+        check("adding a file forgets the undo", !tidy2.canUndo());
         tidy2.sortByName();
         tidy2.togglePinAt(0); // pin a.txt
-        check("so does pinning", !tidy2.canUndoTidy());
+        check("so does pinning", !tidy2.canUndo());
 
         // pinned items stay on top when sorting
         tidy2.sortFoldersFirst();
@@ -355,8 +355,8 @@ public class ShelfViewTest {
         check("the menu says how many", menuLabels(tidy2.buildTidyMenu()).contains("Remove 2 missing items"));
         equal("remove takes exactly those", 2, tidy2.removeMissing());
         equal("the rest is kept in order", List.of("a.txt", "zdir", "file2.txt"), names(tidy2));
-        check("a clean-up can be undone", tidy2.canUndoTidy());
-        check("undo brings the missing items back", tidy2.undoTidy());
+        check("a clean-up can be undone", tidy2.canUndo());
+        check("undo brings the missing items back", tidy2.undo());
         equal("they are back where they were", List.of("a.txt", "zdir", "file2.txt", "file10.txt", "new.txt"), names(tidy2));
         equal("removing again takes the same two", 2, tidy2.removeMissing());
         equal("and now nothing is missing", 0, tidy2.missingCount());
@@ -367,16 +367,16 @@ public class ShelfViewTest {
         check("a single missing item is not plural", menuLabels(tidy2.buildTidyMenu()).contains("Remove 1 missing item"));
 
         // clicking the menu entries runs the actions
-        tidy2.undoTidy(); // brings back file2, file10 and new, which are all missing by now
+        tidy2.undo(); // brings back file2, file10 and new, which are all missing by now
         equal("the shelf is back to five items", List.of("a.txt", "zdir", "file2.txt", "file10.txt", "new.txt"), names(tidy2));
         clickMenuItem(tidy2.buildTidyMenu(), "Sort A-Z");
         equal("clicking Sort A-Z in the menu sorts the shelf",
                 List.of("a.txt", "file2.txt", "file10.txt", "new.txt", "zdir"), names(tidy2));
-        check("and it can be undone", tidy2.canUndoTidy());
-        clickMenuItem(tidy2.buildTidyMenu(), "Undo");
+        check("and it can be undone", tidy2.canUndo());
+        clickMenuItem(tidy2.buildTidyMenu(), "Undo Sort A-Z");
         equal("clicking Undo in the menu puts it back",
                 List.of("a.txt", "zdir", "file2.txt", "file10.txt", "new.txt"), names(tidy2));
-        check("and the undo is used up", !tidy2.canUndoTidy());
+        check("and the undo is used up", !tidy2.canUndo());
 
         // while a search hides rows, none of it applies (three items are missing: file2, file10, new)
         tidy2.setQuery("a.txt");
@@ -514,7 +514,7 @@ public class ShelfViewTest {
         equal("the search still shows only its match", List.of("second.txt"), names(pv.visibleItems()));
         pv.setQuery("");
         check("the pasted item is there once the search is cleared", names(pv).contains("hidden by search.txt"));
-        check("a paste forgets an old tidy-up undo", !pv.canUndoTidy());
+        check("a paste forgets an old tidy-up undo", !pv.canUndo());
 
         // a clipboard that is busy (another program holds it) is simply empty
         pv.setClipboardSource(() -> {
@@ -619,18 +619,18 @@ public class ShelfViewTest {
         check("sort A-Z changes the order", rv.sortByName());
         equal("sorted by the names shown, pinned first", List.of("Notes", "Budget", "Zulu"),
                 List.of(rv.displayNameAt(0), rv.displayNameAt(1), rv.displayNameAt(2)));
-        check("undo", rv.undoTidy());
+        check("undo", rv.undo());
         equal("undo brings back the order with every name", List.of("Notes", "Zulu", "Budget"),
                 List.of(rv.displayNameAt(0), rv.displayNameAt(1), rv.displayNameAt(2)));
         ShelfView restarted2 = new ShelfView(renameStore);
         equal("a restart keeps names and pins together", List.of("Notes", "Zulu", "Budget"),
                 List.of(restarted2.displayNameAt(0), restarted2.displayNameAt(1), restarted2.displayNameAt(2)));
         check("and the pin", restarted2.isPinnedAt(0) && !restarted2.isPinnedAt(1));
-        check("a used-up undo is gone", !rv.canUndoTidy());
+        check("a used-up undo is gone", !rv.canUndo());
         check("sort A-Z again", rv.sortByName());
-        check("so a tidy-up can be undone", rv.canUndoTidy());
+        check("so a tidy-up can be undone", rv.canUndo());
         rv.setLabelAt(1, "Brand new");
-        check("but renaming afterwards makes that undo stale", !rv.canUndoTidy());
+        check("but renaming afterwards makes that undo stale", !rv.canUndo());
 
         // a renamed item can be removed and added again, and then has no name
         ShelfItem r1Item = new ShelfItem(r1.toPath());
@@ -742,6 +742,96 @@ public class ShelfViewTest {
         many.selectRows(0, 1, 2);
         equal("a missing file among several does not stop the others", 2, many.openSelected());
         equal("the two that exist were launched", 2, launched4.size());
+
+        // ---- undoing a removal ----
+        Path undoStore = dir.resolve("undo-store").resolve("shelf.txt");
+        ShelfView uv = new ShelfView(undoStore);
+        List<File> five = new ArrayList<>();
+        for (String name : List.of("u1.txt", "u2.txt", "u3.txt", "u4.txt", "u5.txt")) {
+            five.add(Files.createFile(dir.resolve(name)).toFile());
+        }
+        uv.addFiles(five);
+        uv.selectRows(1);
+        uv.togglePinSelected(); // u2 pinned: goes to the top
+        uv.setLabelAt(0, "Two");
+        equal("starting order", List.of("u2.txt", "u1.txt", "u3.txt", "u4.txt", "u5.txt"), names(uv));
+        check("nothing to undo yet", !uv.canUndo() && !uv.undo());
+        equal("the menu says plain Undo, switched off", true, menuLabels(uv.buildTidyMenu()).contains("Undo (off)"));
+
+        // one item
+        check("remove one row", uv.removeAt(2));
+        equal("u3 is gone", List.of("u2.txt", "u1.txt", "u4.txt", "u5.txt"), names(uv));
+        check("a removal can be undone", uv.canUndo());
+        equal("the menu says what it undoes", "Undo remove", uv.undoMenuText());
+        check("and offers it", menuLabels(uv.buildTidyMenu()).contains("Undo remove"));
+        check("undo", uv.undo());
+        equal("u3 is back in its old place", List.of("u2.txt", "u1.txt", "u3.txt", "u4.txt", "u5.txt"), names(uv));
+        equal("and saved", List.of("u2.txt", "u1.txt", "u3.txt", "u4.txt", "u5.txt"), names(new ShelfView(undoStore)));
+        equal("the item that came back is selected", 1, uv.selectedCount());
+        equal("on its row", 2, uv.selectedRow());
+        check("undo works once", !uv.canUndo() && !uv.undo());
+
+        // several items, including a pinned, renamed one
+        uv.selectRows(0, 2, 4);
+        equal("remove three", 3, uv.removeSelected());
+        equal("two left", List.of("u1.txt", "u4.txt"), names(uv));
+        equal("the menu counts them", "Undo remove 3 items", uv.undoMenuText());
+        javax.swing.Action ctrlZ = uv.boundAction(java.awt.event.KeyEvent.VK_Z, java.awt.event.InputEvent.CTRL_DOWN_MASK);
+        check("Ctrl+Z is bound", ctrlZ != null);
+        check("plain Z is not", uv.boundAction(java.awt.event.KeyEvent.VK_Z) == null);
+        ctrlZ.actionPerformed(null);
+        equal("Ctrl+Z puts all three back in place", List.of("u2.txt", "u1.txt", "u3.txt", "u4.txt", "u5.txt"), names(uv));
+        check("the pinned one is still pinned", uv.isPinnedAt(0) && !uv.isPinnedAt(1));
+        equal("and keeps its name", "Two", uv.displayNameAt(0));
+        equal("all three are selected", 3, uv.selectedCount());
+        ShelfView afterUndo = new ShelfView(undoStore);
+        check("the restart sees pin and name too", afterUndo.isPinnedAt(0) && afterUndo.displayNameAt(0).equals("Two"));
+        ctrlZ.actionPerformed(null); // nothing left to undo: harmless
+        equal("a second Ctrl+Z changes nothing", 5, uv.items().size());
+
+        // the Delete key path and the menu path
+        uv.selectRows(4);
+        uv.boundAction(java.awt.event.KeyEvent.VK_DELETE).actionPerformed(null);
+        equal("Delete removed u5", 4, uv.items().size());
+        clickMenuItem(uv.buildTidyMenu(), "Undo remove");
+        equal("Undo in the menu brings it back", List.of("u2.txt", "u1.txt", "u3.txt", "u4.txt", "u5.txt"), names(uv));
+
+        // only the latest change can be undone, and other changes make it stale
+        uv.removeAt(4);
+        uv.removeAt(3);
+        uv.undo();
+        equal("undo takes back only the last removal", List.of("u2.txt", "u1.txt", "u3.txt", "u4.txt"), names(uv));
+        uv.removeAt(3);
+        check("a sort with nothing to change does nothing", !uv.sortByName());
+        equal("and keeps the removal undo", "Undo remove", uv.undoMenuText());
+        uv.undo(); // u4 back
+        uv.setLabelAt(2, "Aaa"); // u3 now sorts before u1
+        uv.removeAt(3);
+        check("this sort has work to do", uv.sortByName());
+        equal("a sort after a removal replaces it", "Undo Sort A-Z", uv.undoMenuText());
+        uv.undo();
+        equal("undoing the sort does not bring u4 back", 3, uv.items().size());
+        uv.removeAt(0);
+        uv.addFiles(List.of(five.get(4)));
+        check("adding a file forgets the removal undo", !uv.canUndo());
+        uv.removeAt(0);
+        uv.setLabelAt(0, "Renamed");
+        check("so does renaming", !uv.canUndo());
+        uv.removeAt(0);
+        uv.togglePinAt(0);
+        check("so does pinning", !uv.canUndo());
+
+        // removing while a search is active, then undoing it
+        ShelfView sv = new ShelfView(dir.resolve("undo-search-store").resolve("shelf.txt"));
+        sv.addFiles(five);
+        sv.setQuery("u4.txt");
+        check("the search shows one row", sv.removeAt(0));
+        check("which is now gone", sv.items().size() == 4);
+        check("undo during a search", sv.undo());
+        equal("brings it back", 5, sv.items().size());
+        equal("and selects it in the filtered list", 0, sv.selectedRow());
+        sv.setQuery("");
+        equal("in its old place", List.of("u1.txt", "u2.txt", "u3.txt", "u4.txt", "u5.txt"), names(sv));
 
         TestRunner.finish();
     }

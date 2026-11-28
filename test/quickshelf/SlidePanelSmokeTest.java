@@ -316,6 +316,13 @@ public class SlidePanelSmokeTest {
             press(list, java.awt.event.KeyEvent.VK_DELETE, none);
             equal("Delete removes the whole selection", 0, (int) onEdt(() -> keys.shelf().items().size()));
 
+            // Ctrl+Z takes the removal back, with the returning items selected
+            press(list, java.awt.event.KeyEvent.VK_Z, java.awt.event.InputEvent.CTRL_DOWN_MASK);
+            equal("Ctrl+Z brings both back", 2, (int) onEdt(() -> keys.shelf().items().size()));
+            equal("and selects them", 2, (int) onEdt(() -> keys.shelf().selectedCount()));
+            press(list, java.awt.event.KeyEvent.VK_DELETE, none);
+            equal("so Delete right away removes them again", 0, (int) onEdt(() -> keys.shelf().items().size()));
+
             // Ctrl+V pastes files (from a stand-in clipboard, so the real one is never touched)
             java.io.File pasted = Files.createFile(files.resolve("pasted.txt")).toFile();
             onEdt(() -> {

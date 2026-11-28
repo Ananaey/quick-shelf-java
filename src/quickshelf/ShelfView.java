@@ -95,8 +95,13 @@ public class ShelfView extends JScrollPane {
     private final transient ShelfStorage storage;
     private transient Theme theme = Theme.DARK;
     private String query = "";
-    /** The shelf as it was just before the last tidy-up, or null. Any other change forgets it. */
+    /**
+     * The shelf as it was just before the last removal or tidy-up, or null. Any other change
+     * forgets it, so undo never jumps back over something the user did afterwards.
+     */
     private transient List<ShelfItem> undoSnapshot;
+    /** What the undo would undo, for the menu ("Sort A-Z", "remove 3 items"). */
+    private transient String undoWhat = "";
 
     /** A shelf saved in the default location (%APPDATA%\QuickShelf). */
     public ShelfView() {
@@ -159,6 +164,7 @@ public class ShelfView extends JScrollPane {
         bindKey(KeyEvent.VK_DELETE, "remove", this::removeSelected);
         bindKey(KeyEvent.VK_F2, "rename", this::renameSelected);
         bindKey(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK, "paste", this::pasteFromClipboard);
+        bindKey(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK, "undo", this::undo);
 
         loadSaved();
     }
@@ -401,12 +407,13 @@ public class ShelfView extends JScrollPane {
         if (index < 0 || index >= shown.size()) {
             return false;
         }
+        List<ShelfItem> before = items();
         model.removeElement(shown.get(index));
         refresh();
         if (!shown.isEmpty()) {
             list.setSelectedIndex(Math.min(index, shown.size() - 1));
         }
-        persist();
+        persistUndoable(before, removalName(1));
         return true;
     }
 
@@ -495,13 +502,14 @@ public class ShelfView extends JScrollPane {
         if (chosen.isEmpty()) {
             return 0;
         }
+        List<ShelfItem> before = items();
         int firstRow = list.getMinSelectionIndex();
         chosen.forEach(model::removeElement);
         refresh();
         if (!shown.isEmpty()) {
             list.setSelectedIndex(Math.min(firstRow, shown.size() - 1));
         }
-        persist();
+        persistUndoable(before, removalName(chosen.size()));
         return chosen.size();
     }
 
@@ -562,12 +570,12 @@ public class ShelfView extends JScrollPane {
 
     /** Sorts the whole shelf A to Z (pinned items stay on top). Not while a search hides rows. */
     boolean sortByName() {
-        return tidy(ShelfSort.byName(items()));
+        return tidy(ShelfSort.byName(items()), "Sort A-Z");
     }
 
     /** Sorts folders before files, each A to Z (pinned items stay on top). Not while searching. */
     boolean sortFoldersFirst() {
-        return tidy(ShelfSort.foldersFirst(items()));
+        return tidy(ShelfSort.foldersFirst(items()), "Folders first");
     }
 
     int missingCount() {
@@ -586,33 +594,67 @@ public class ShelfView extends JScrollPane {
         }
         List<ShelfItem> kept = new ArrayList<>(before);
         kept.removeAll(gone);
-        tidy(kept);
+        tidy(kept, "remove missing items");
         return gone.size();
     }
 
-    boolean canUndoTidy() {
+    // ---- undo ------------------------------------------------------------------------
+
+    boolean canUndo() {
         return undoSnapshot != null;
     }
 
-    /** Puts the shelf back the way it was before the last sort or clean-up. */
-    boolean undoTidy() {
+    /** "Undo Sort A-Z", "Undo remove 3 items", or just "Undo" when there is nothing to undo. */
+    String undoMenuText() {
+        return canUndo() ? "Undo " + undoWhat : "Undo";
+    }
+
+    /**
+     * Puts the shelf back the way it was before the last removal, sort or clean-up. Items that
+     * come back are selected, so it is easy to see what returned. Works once.
+     */
+    boolean undo() {
         if (undoSnapshot == null) {
             return false;
         }
-        setModelItems(undoSnapshot);
+        List<ShelfItem> restored = new ArrayList<>(undoSnapshot);
+        List<ShelfItem> returning = new ArrayList<>(restored);
+        returning.removeAll(items());
+        setModelItems(restored);
+        prefetch(returning);
         persist(); // forgets the snapshot, so undo works once
+        List<Integer> rows = new ArrayList<>();
+        for (int i = 0; i < shown.size(); i++) {
+            if (returning.contains(shown.get(i))) {
+                rows.add(i);
+            }
+        }
+        if (!rows.isEmpty()) {
+            list.setSelectedIndices(rows.stream().mapToInt(Integer::intValue).toArray());
+            list.ensureIndexIsVisible(rows.get(0));
+        }
         return true;
     }
 
-    private boolean tidy(List<ShelfItem> after) {
+    private boolean tidy(List<ShelfItem> after, String what) {
         List<ShelfItem> before = items();
         if (isSearching() || after.equals(before)) {
             return false;
         }
         setModelItems(after);
-        persist();
-        undoSnapshot = before; // after persist(), which clears it
+        persistUndoable(before, what);
         return true;
+    }
+
+    /** Saves a change that undo can take back, remembering the shelf as it was before. */
+    private void persistUndoable(List<ShelfItem> before, String what) {
+        persist(); // clears any older undo
+        undoSnapshot = new ArrayList<>(before);
+        undoWhat = what;
+    }
+
+    private static String removalName(int count) {
+        return count == 1 ? "remove" : "remove " + count + " items";
     }
 
     /** The menu with sorting, clean-up and undo. */
@@ -628,7 +670,7 @@ public class ShelfView extends JScrollPane {
                 missing == 0 ? "No missing items" : "Remove " + missing + " missing item" + (missing == 1 ? "" : "s"),
                 missing > 0 && !isSearching(), this::removeMissing));
         menu.addSeparator();
-        menu.add(menuItem("Undo", canUndoTidy(), this::undoTidy));
+        menu.add(menuItem(undoMenuText(), canUndo(), this::undo));
         return menu;
     }
 
@@ -707,7 +749,7 @@ public class ShelfView extends JScrollPane {
     }
 
     private void persist() {
-        undoSnapshot = null; // every change except a tidy-up makes an older undo stale
+        undoSnapshot = null; // every change makes an older undo stale (undoable ones set a new one)
         List<ShelfStorage.Entry> entries = new ArrayList<>();
         for (ShelfItem item : items()) {
             entries.add(new ShelfStorage.Entry(item.getPath(), item.isPinned(), item.getLabel()));
