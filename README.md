@@ -22,6 +22,7 @@ Java is already bundled, so you do not need to install anything. The app is not 
 - **Rename:** select an item and press **F2** (or right-click, **Rename...**) to give it a short display name of your own, such as "Budget" for `Q3_final_v7.xlsx`. Only the name on the shelf changes: the file itself is never renamed. Leave the box empty to go back to the file name. Search finds an item by either name, and sorting follows the name you see.
 - **Tidy up:** the ⋮ button in the header (or a right-click on the empty space below the items) has **Sort A-Z** (numbers count by value, so `file2` comes before `file10`), **Folders first**, **Remove N missing items** (files that no longer exist), and **Undo** for the last one of those. Pinned items always stay on top. These are switched off while a search is active.
 - **Select several:** Ctrl-click or Shift-click to pick more than one item, or press Ctrl+A for all of them. Then Enter opens them all (up to 10 at once), Delete removes them, and the right-click menu can copy all their paths (one per line), pin or unpin them together, or remove them. Dragging out takes the whole selection.
+- **Undo:** removed something by mistake? Press **Ctrl+Z** in the list (or use **Undo** in the ⋮ menu) and it comes back in its old place, still pinned and with its name, and selected so you can see it. The menu says what it will undo ("Undo remove 3 items", "Undo Sort A-Z"). Only the last removal or tidy-up can be undone, and adding, renaming, pinning or moving an item afterwards clears it, so undo never jumps back over something you did later.
 - **Drag out:** drag an item from the shelf into an email, a chat window or an Explorer folder. It is always copied, never moved, so your original file stays where it was.
 - **More:** right-click an item for Open, Show in folder, Copy path, Pin to top, Move up, Move down and Remove. Delete also removes.
 - **Pin:** pinned items stay at the top of the shelf, marked with a blue dot. Move up and Move down work inside the pinned group and inside the rest, so a pinned item never drifts down.
@@ -90,4 +91,5 @@ git push origin v0.2.0
 - [x] Day 17: file status and icons are looked up in the background, so a dead network drive cannot freeze the shelf
 - [x] Day 18: give items a display name of your own (F2 or right-click, Rename...)
 - [x] Day 19: paste files or paths from the clipboard (Ctrl+V or the menu)
+- [x] Day 20: undo a removal with Ctrl+Z (or the menu), which names what it will undo
 - [ ] Later: named groups, a real installer (needs WiX), code signing
